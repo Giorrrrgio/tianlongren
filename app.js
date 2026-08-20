@@ -19,6 +19,67 @@
   const fmt2 = (n) => (Number(n) || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fm = (v) => { const a = Math.abs(v); return a >= 10000 ? (v / 10000).toFixed(2) + "万" : fmt2(v); };
 
+  /* ============ CountUp 数字滚动动画 ============ */
+  function countUp(el, target, options = {}) {
+    if (!el) return;
+    const {
+      duration = 800,
+      decimals = 0,
+      formatter = (n) => n.toLocaleString("zh-CN", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }),
+      prefix = "",
+      suffix = ""
+    } = options;
+
+    const start = performance.now();
+    const startVal = 0;
+    const endVal = parseFloat(target) || 0;
+
+    // 如果浏览器不可见，直接显示目标值
+    if (document.hidden) { el.textContent = prefix + formatter(endVal) + suffix; return; }
+
+    function update(now) {
+      const elapsed = now - start;
+      const progress = Math.min(elapsed / duration, 1);
+
+      // easeOutExpo 缓动函数
+      const eased = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
+      const current = startVal + (endVal - startVal) * eased;
+
+      el.textContent = prefix + formatter(current) + suffix;
+
+      if (progress < 1) requestAnimationFrame(update);
+    }
+
+    requestAnimationFrame(update);
+  }
+
+  /* 批量动画化容器内的数字 */
+  function animateNumbers(container) {
+    if (!container) return;
+    // 匹配 .stat-value, .card-value, .hi-v, .ms-v, .fs-v, .acct-amt, .friv-total .num
+    const selectors = [".stat-value", ".card-value", ".hi-v", ".ms-v", ".fs-v", ".acct-amt"];
+    selectors.forEach(sel => {
+      container.querySelectorAll(sel).forEach(el => {
+        const text = el.textContent;
+        // 提取数字（支持负数、小数）
+        const match = text.match(/-?[\d,.]+/);
+        if (!match) return;
+        const num = parseFloat(match[0].replace(/,/g, ""));
+        if (isNaN(num) || num === 0) return;
+        
+        // 保留原始前缀后缀（如 ¥、kg、% 等）
+        const prefix = text.substring(0, text.indexOf(match[0]));
+        const suffix = text.substring(text.indexOf(match[0]) + match[0].length);
+        
+        countUp(el, num, {
+          decimals: (match[0].split(".").length > 1 ? match[0].split(".")[1].length : 0),
+          prefix,
+          suffix
+        });
+      });
+    });
+  }
+
   /* ============ 财务加密锁（独立于 D，单独持久化） ============ */
   let FIN = (function () { try { return JSON.parse(localStorage.getItem("tlr_finlock")) || { on: false, pin: "" }; } catch (e) { return { on: false, pin: "" }; } })();
   function saveFinLock() { try { localStorage.setItem("tlr_finlock", JSON.stringify(FIN)); } catch (e) {} }
@@ -714,6 +775,7 @@
 
     /* 渲染总览的账户余额卡 + 资产构成条（与财务页共用 renderAssets） */
     renderAssets();
+    animateNumbers($("#body-overview"));
   }
   function quickWeightModal() {
     openModal("记录体重", `
@@ -1312,6 +1374,7 @@
     drawTrend("#bodyTrendWeight", td.weight, "#10b981");
     drawTrend("#bodyTrendFat", td.fat, "#f43f5e");
     drawTrend("#bodyTrendMuscle", td.muscle, "#3b82f6");
+    animateNumbers($("#body-weight"));
   }
 
   /* ============ 渲染：喝水 / 饮品 ============ */
@@ -1626,6 +1689,7 @@
     const af = $("#addFriv"); if (af) af.onclick = addFriv;
     renderFrivList();
     renderFundLists();
+    animateNumbers($("#body-finance"));
   }
 
   function popCat() { const arr = $("#tType").value === "income" ? D.finance.icats : D.finance.ecats; $("#tCat").innerHTML = arr.map((c) => `<option>${c}</option>`).join(""); }
@@ -2133,6 +2197,40 @@
     setThemeIcon(); renderAll();
   }
 
-  function start() { setGreeting(); setThemeIcon(); bind(); finApplyClass(); if (SYNC_URL) syncPull(renderAll); else renderAll(); rolloverFriv(); setInterval(() => { if (rolloverFriv()) { if (curPage === "finance") renderFinance(); toast("非必要性开支已清空 · 新的一月 🎈"); } }, 60000); }
+  function start() {
+    setGreeting();
+    setThemeIcon();
+    bind();
+    finApplyClass();
+    initRipple();  // 初始化 ripple 波纹效果
+    if (SYNC_URL) syncPull(renderAll);
+    else renderAll();
+    rolloverFriv();
+    setInterval(() => { if (rolloverFriv()) { if (curPage === "finance") renderFinance(); toast("非必要性开支已清空 · 新的一月 🎈"); } }, 60000);
+  }
+
+  /* ============ Ripple 波纹效果 ============ */
+  function initRipple() {
+    document.addEventListener("click", (e) => {
+      const btn = e.target.closest(".btn");
+      if (!btn) return;
+      
+      // 避免重复触发（已有 ripple 动画中的不新增）
+      if (btn.querySelector(".ripple")) return;
+      
+      const rect = btn.getBoundingClientRect();
+      const size = Math.max(rect.width, rect.height) * 2;
+      const x = e.clientX - rect.left - size / 2;
+      const y = e.clientY - rect.top - size / 2;
+      
+      const ripple = document.createElement("span");
+      ripple.className = "ripple";
+      ripple.style.cssText = `width:${size}px;height:${size}px;left:${x}px;top:${y}px;`;
+      
+      btn.appendChild(ripple);
+      
+      ripple.addEventListener("animationend", () => ripple.remove());
+    });
+  }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
 })();
