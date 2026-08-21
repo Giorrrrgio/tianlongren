@@ -135,7 +135,7 @@
     const items = frivItems().slice().sort((a, b) => b.date.localeCompare(a.date) || String(b.id).localeCompare(String(a.id)));
     el.innerHTML = items.length
       ? items.map((t) => `<div class="row"><div class="row-main"><div class="row-title">${esc(t.note)}</div><div class="row-meta">${t.date.slice(5)}</div></div><span class="num" style="color:#be123c;font-weight:800;">-${MM2(t.amt)}</span><button class="mi-del" data-delfriv="${t.id}">×</button></div>`).join("")
-      : `<div class="empty">本月还没乱花 🎉</div>`;
+      : emptyState('🎉', '本月还没乱花', '控制得很好！有非必要支出时可以记在这里', null, null);
     $$("#frivList [data-delfriv]").forEach((b) => (b.onclick = () => { frivItems().splice(frivItems().indexOf(frivItems().find((x) => x.id === b.dataset.delfriv)), 1); save(); renderFrivList(); renderFinance(); toast("已删除"); }));
   }
   function addFriv() {
@@ -469,7 +469,7 @@
     const el = $(listSel); if (!el) return;
     el.innerHTML = entries.length
       ? entries.map(([m, v]) => `<div class="row"><div class="row-main"><div class="row-title">${m.replace("-", "年")}月</div></div><span class="num" style="font-weight:800;">${fmtFn(v)}</span><button class="mi-del" data-m="${m}">×</button></div>`).join("")
-      : `<div class="empty">暂无记录</div>`;
+      : emptyState('📭', '暂无记录', '开始记录你的第一笔数据吧', null, null);
     $$(listSel + " [data-m]").forEach((b) => (b.onclick = () => onDel(b.dataset.m)));
   }
   function renderFundLists() {
@@ -496,6 +496,19 @@
   /* ============ Toast ============ */
   let toastT;
   function toast(msg, type = "ok") { const el = $("#toast"); el.textContent = msg; el.className = "toast on toast-" + type; clearTimeout(toastT); toastT = setTimeout(() => (el.className = "toast"), 1800); }
+
+  /* ============ 空状态工厂（增强版） ============ */
+  function emptyState(icon, title, desc, actionText, actionOnClick) {
+    const actionHtml = actionText
+      ? `<button class="empty-action" data-empty-action="1">${actionText}</button>`
+      : '';
+    return `<div class="empty-state">
+      <div class="empty-icon">${icon}</div>
+      <div class="empty-title">${title}</div>
+      <div class="empty-desc">${desc}</div>
+      ${actionHtml}
+    </div>`;
+  }
 
   /* ============ Modal ============ */
   function openModal(title, html, onConfirm) {
@@ -539,6 +552,39 @@
     });
     const labels = series[0].labels || [];
     ctx.fillStyle = ct.text; ctx.textAlign = "center"; labels.forEach((lb, i) => { if (labels.length <= 8 || i % Math.ceil(labels.length / 7) === 0 || i === labels.length - 1) ctx.fillText(lb, xAt(i, labels.length), h - 10); });
+
+    // 返回数据点位置信息（用于 Tooltip）
+    return { pts: series[0].data.map((v, i) => ({ x: xAt(i, series[0].data.length), y: v == null ? null : yAt(v), v, label: labels[i] })), pad, cw, ch };
+  }
+
+  /* 带 Tooltip 的折线图（增强版） */
+  function drawLineWithTooltip(cv, series, opt = {}) {
+    const info = drawLine(cv, series, opt);
+    if (!info || !info.pts) return;
+
+    const tooltip = new ChartTooltip(cv);
+    const rect = cv.getBoundingClientRect();
+
+    cv.onmousemove = (e) => {
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      // 找最近的数据点
+      let nearest = null;
+      let minDist = Infinity;
+      info.pts.forEach((p) => {
+        if (p.y == null) return;
+        const dist = Math.sqrt(Math.pow(p.x - mx, 2) + Math.pow(p.y - my, 2));
+        if (dist < minDist && dist < 30) { minDist = dist; nearest = p; }
+      });
+      if (nearest) {
+        tooltip.show(nearest.x, nearest.y, `${nearest.label}: ${opt.tooltipFmt ? opt.tooltipFmt(nearest.v) : nearest.v}`);
+        cv.style.cursor = 'pointer';
+      } else {
+        tooltip.hide();
+        cv.style.cursor = 'default';
+      }
+    };
+    cv.onmouseleave = () => { tooltip.hide(); cv.style.cursor = 'default'; };
   }
   function drawDoughnut(cv, items, opt = {}) {
     const { ctx, w, h } = setupCanvas(cv, opt.h || 230);
@@ -878,7 +924,7 @@
             <div class="meal-group-title"><span style="color:${m.color}">${ic(m.k)}</span>${m.name}</div>
             <div class="meal-kcal">${Math.round(cal)} kcal</div>
           </div>
-          ${list.length ? items : `<div class="empty" style="padding:8px;font-size:12px;">还没记录</div>`}
+          ${list.length ? items : `<div class="empty-state" style="padding:16px 8px;"><div class="empty-icon" style="font-size:32px;">🍽️</div><div class="empty-title" style="font-size:13px;">还没记录</div><div class="empty-desc" style="font-size:11px;">点击下方按钮添加</div></div>`}
           <button class="meal-add-btn" data-addmeal="${m.k}">+ 添加${m.name}</button>
         </div>`;
     }).join("");
@@ -1544,7 +1590,7 @@
     if (e && e.parts.length) {
       const parts = e.parts.join("·");
       html += `<div class="row"><div class="row-ic" style="background:#d1fae5;color:#047857;">练</div><div class="row-main"><div class="row-title">${t.slice(5)} · ${parts}</div><div class="row-meta">${e.creatine ? '💊' + " 肌酸 " : ""}${e.fishOil ? '🐟' + " 鱼油" : ""}${e.creatine || e.fishOil ? "" : "已打卡"}</div></div><span class="tag tag-green">今日</span></div>`;
-    } else html += `<div class="empty">今天还没训练，点日历或动作 + 号打卡</div>`;
+    } else html += emptyState('🏋️', '今天还没训练', '点日历或动作 + 号打卡', null, null);
     $("#trainLog").innerHTML = html;
   }
 
@@ -2148,7 +2194,7 @@
       const rr = D.punch[k]; const w = new Date(k).getDay(); const we = w === 0 || w === 6; const ts = rr.times || {};
       const parts = PUNCH_STEPS.map((st) => `${st.label}${ts[st.key] || "—"}`).join(" · ");
       return `<div class="row"><div class="row-main"><div class="row-title">${k.slice(5)}</div><div class="row-meta">${parts}</div></div><span class="tag ${we ? "tag-amber" : "tag-gray"}">${we ? "周末" : "工作日"}</span></div>`;
-    }).join("") : `<div class="empty">还没有打卡记录</div>`;
+    }).join("") : emptyState('📋', '还没有打卡记录', '开始记录你的每日打卡吧', null, null);
     $("#body-punch").innerHTML = `
       <div class="demo-badge">本地优先 · 数据存浏览器</div>
       <div class="card">
@@ -2268,7 +2314,13 @@
     bind();
     finApplyClass();
     initRipple();  // 初始化 ripple 波纹效果
+    initPWA();     // PWA 支持（SW + 安装提示）
+    initVisibilityRefresh();  // 标签页切换自动刷新
     dailyRollover();  // 每日数据重置（凌晨 3 点生效）
+
+    // 添加噪点纹理
+    document.body.classList.add('noise-bg');
+
     if (SYNC_URL) syncPull(renderAll);
     else renderAll();
     rolloverFriv();
@@ -2285,22 +2337,137 @@
     document.addEventListener("click", (e) => {
       const btn = e.target.closest(".btn");
       if (!btn) return;
-      
+
       // 避免重复触发（已有 ripple 动画中的不新增）
       if (btn.querySelector(".ripple")) return;
-      
+
       const rect = btn.getBoundingClientRect();
       const size = Math.max(rect.width, rect.height) * 2;
       const x = e.clientX - rect.left - size / 2;
       const y = e.clientY - rect.top - size / 2;
-      
+
       const ripple = document.createElement("span");
       ripple.className = "ripple";
       ripple.style.cssText = `width:${size}px;height:${size}px;left:${x}px;top:${y}px;`;
-      
+
       btn.appendChild(ripple);
-      
+
       ripple.addEventListener("animationend", () => ripple.remove());
+    });
+  }
+
+  /* ============ 交错显示动画 (Stagger) ============ */
+  function staggerChildren(container, selector = '.stagger-item') {
+    if (!container) return;
+    container.querySelectorAll(selector).forEach((el, i) => {
+      el.classList.add('stagger-item');
+      el.style.animationDelay = `${i * 0.05}s`;
+    });
+  }
+
+  /* ============ 图表统一配色 ============ */
+  const CHART_COLORS = {
+    primary: '#0e9f6e',
+    success: '#10b981',
+    danger: '#f43f5e',
+    warning: '#f59e0b',
+    info: '#3b82f6',
+    violet: '#8b5cf6',
+    teal: '#14b8a6',
+    grid: 'rgba(0,0,0,0.06)',
+    text: '#64748b',
+  };
+
+  /* ============ 图表 Tooltip 组件 ============ */
+  class ChartTooltip {
+    constructor(canvas) {
+      this.canvas = canvas;
+      this.el = document.createElement('div');
+      this.el.className = 'chart-tooltip';
+      canvas.parentElement.appendChild(this.el);
+      this.hide();
+    }
+    show(x, y, content) {
+      this.el.innerHTML = content;
+      const rect = this.canvas.parentElement.getBoundingClientRect();
+      this.el.style.left = Math.min(x, rect.width - 120) + 'px';
+      this.el.style.top = (y - 40) + 'px';
+      this.el.classList.add('visible');
+    }
+    hide() { this.el.classList.remove('visible'); }
+  }
+
+  /* ============ 图表动画包装器 ============ */
+  function animateChart(drawFn, duration = 800) {
+    const start = performance.now();
+    function frame(now) {
+      const progress = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
+      drawFn(eased);
+      if (progress < 1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  /* ============ PWA 支持 ============ */
+  let deferredPrompt;
+  function initPWA() {
+    // 注册 Service Worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then((reg) => console.log('[SW] 注册成功，scope:', reg.scope))
+          .catch((err) => console.warn('[SW] 注册失败:', err));
+      });
+    }
+
+    // 安装提示
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      showPWAInstallBanner();
+    });
+
+    window.addEventListener('appinstalled', () => {
+      toast('✅ 天龙人已安装为应用');
+      deferredPrompt = null;
+      hidePWAInstallBanner();
+    });
+  }
+
+  function showPWAInstallBanner() {
+    const existing = $('#pwaInstallBar');
+    if (existing) { existing.style.display = 'flex'; return; }
+
+    const bar = document.createElement('div');
+    bar.id = 'pwaInstallBar';
+    bar.className = 'pwa-install-bar';
+    bar.innerHTML = `
+      <span class="pwa-install-text">📱 安装天龙人到桌面，像 APP 一样使用</span>
+      <button class="pwa-install-btn" id="pwaInstallBtn">安装</button>
+    `;
+    const content = $('.content');
+    if (content) content.insertBefore(bar, content.firstChild);
+
+    $('#pwaInstallBtn').onclick = async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') toast('🎉 已安装到桌面！');
+      deferredPrompt = null;
+      hidePWAInstallBanner();
+    };
+  }
+
+  function hidePWAInstallBanner() {
+    const bar = $('#pwaInstallBar');
+    if (bar) bar.style.display = 'none';
+  }
+
+  /* ============ visibilitychange 自动刷新 ============ */
+  function initVisibilityRefresh() {
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && _initialized) renderAll();
     });
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
