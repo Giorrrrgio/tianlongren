@@ -1,18 +1,20 @@
 /* 天龙人 Service Worker
  * 缓存策略：Cache First（离线优先，后台静默更新）
- * 版本：tlr-v2
+ * 版本：tlr-v3
  */
 
-const CACHE_NAME = 'tlr-v2';
+const CACHE_NAME = 'tlr-v3';
 
 // 需要缓存的静态资源
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/styles.css',
-  '/app.js',
-  '/seed.js',
-  '/manifest.json',
+  '/tianlongren/',
+  '/tianlongren/index.html',
+  '/tianlongren/styles.css',
+  '/tianlongren/app.js',
+  '/tianlongren/seed.js',
+  '/tianlongren/manifest.json',
+  '/tianlongren/icon-192.png',
+  '/tianlongren/icon-512.png',
 ];
 
 // 安装：预缓存静态资源
@@ -82,9 +84,9 @@ async function fetchAndCache(request) {
 
     return response;
   } catch (error) {
-    // 网络失败 → 返回离线页面（可选）
+    // 网络失败 → 返回离线页面
     if (request.destination === 'document') {
-      return caches.match('/');
+      return caches.match('/tianlongren/');
     }
     throw error;
   }
