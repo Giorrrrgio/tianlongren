@@ -936,7 +936,7 @@
         <div style="display:flex;align-items:center;gap:10px;">
           <button class="cal-nav" id="mdPrev" aria-label="前一天">‹</button>
           <div>
-            <div class="card-title" id="mdLabel">${t.slice(5)} · 周${WK[dateFromStr(t).getDay()]} <span id="liveClock" style="font-size:13px;font-weight:400;color:var(--text-muted);margin-left:6px;"></span></div>
+            <div class="card-title" id="mdLabel">${t.slice(5)} · 周${WK[dateFromStr(t).getDay()]}</div>
             <div class="card-sub">${t === todayStr() ? "今天 · 可改历史" : "历史日期 · 可补登 / 修改"}</div>
           </div>
           <button class="cal-nav" id="mdNext" aria-label="后一天">›</button>
@@ -2417,7 +2417,7 @@
   function setGreeting() {
     const h = new Date().getHours(); const hi = h < 6 ? "凌晨好" : h < 12 ? "早上好" : h < 14 ? "中午好" : h < 18 ? "下午好" : "晚上好";
     $("#greetTitle").textContent = `${hi}，${D.profile.name}`;
-    const d = new Date(); $("#greetSub").textContent = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 周${WK[d.getDay()]} · 掌控每一天`;
+    const d = new Date(); $("#greetSub").innerHTML = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 周${WK[d.getDay()]} · 掌控每一天 <span id="liveClock" style="font-size:13px;font-weight:400;color:var(--text-muted);margin-left:8px;"></span>`;
     $("#avatarBtn").textContent = D.profile.avatar;
   }
   let curPage = "overview";
