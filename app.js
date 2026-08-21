@@ -15,7 +15,7 @@
   const deepClone = (o) => (o == null ? null : JSON.parse(JSON.stringify(o)));
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
   const esc = (s) => { const d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; };
-  const fmt = (n) => (Number(n) || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = (n) => (Number(n) || 0).toLocaleString("zh-CN", { maximumFractionDigits: 0 });
   const fmt2 = (n) => (Number(n) || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fm = (v) => { const a = Math.abs(v); return a >= 10000 ? (v / 10000).toFixed(2) + "万" : fmt2(v); };
 
@@ -135,7 +135,7 @@
     const items = frivItems().slice().sort((a, b) => b.date.localeCompare(a.date) || String(b.id).localeCompare(String(a.id)));
     el.innerHTML = items.length
       ? items.map((t) => `<div class="row"><div class="row-main"><div class="row-title">${esc(t.note)}</div><div class="row-meta">${t.date.slice(5)}</div></div><span class="num" style="color:#be123c;font-weight:800;">-${MM2(t.amt)}</span><button class="mi-del" data-delfriv="${t.id}">×</button></div>`).join("")
-      : emptyState('🎉', '本月还没乱花', '控制得很好！有非必要支出时可以记在这里', null, null);
+      : `<div class="empty">本月还没乱花 🎉</div>`;
     $$("#frivList [data-delfriv]").forEach((b) => (b.onclick = () => { frivItems().splice(frivItems().indexOf(frivItems().find((x) => x.id === b.dataset.delfriv)), 1); save(); renderFrivList(); renderFinance(); toast("已删除"); }));
   }
   function addFriv() {
@@ -151,76 +151,6 @@
     renderFrivList(); renderFinance();
     toast("已记一笔乱花 💸");
   }
-  /* ============ 每日数据自动重置（凌晨 3 点生效） ============ */
-  // 记录上次重置的日期（格式：YYYY-MM-DD），用于检测跨天
-  let _lastRolloverDate = null;
-
-  /**
-   * 获取"有效的今天"——如果当前时间 < 3:00，则视为"昨天"还在继续
-   * 这样可以确保凌晨 0-3 点之间打开页面时，仍然显示"昨天"的数据
-   * 只有过了 3:00 才算真正进入新的一天
-   */
-  function effectiveToday() {
-    const d = new Date();
-    if (d.getHours() < 3) {
-      d.setDate(d.getDate() - 1);
-    }
-    return dstr(d);
-  }
-
-  /**
-   * 每日数据重置函数
-   * 检测是否跨过凌晨 3 点，如果是则：
-   * 1. 清空饮水记录
-   * 2. 重置待办事项（未完成的保留，已完成的清除）
-   *
-   * @returns {boolean} 是否发生了重置
-   */
-  function dailyRollover() {
-    const effToday = effectiveToday();
-
-    // 如果已经重置过今天的，跳过
-    if (_lastRolloverDate === effToday) return false;
-
-    const prevDate = _lastRolloverDate;
-    _lastRolloverDate = effToday;
-
-    // 首次加载时不重置（除非检测到日期确实变了）
-    if (!prevDate) return false;
-
-    // 检测是否真的跨天了
-    if (prevDate === effToday) return false;
-
-    console.log(`[DailyRollover] 检测到新的一天：${prevDate} → ${effToday}，执行数据重置...`);
-
-    let changed = false;
-
-    // 1. 清空饮水记录（只清空"旧今天"的，保留历史）
-    if (D.nutrition && D.nutrition.water && D.nutrition.water[prevDate]) {
-      delete D.nutrition.water[prevDate];
-      changed = true;
-      console.log('[DailyRollover] ✓ 已清空昨日饮水记录');
-    }
-
-    // 2. 处理待办事项：清除已完成的，未完成的保留
-    if (D.profile && D.profile.todos && D.profile.todos.length > 0) {
-      const prevLen = D.profile.todos.length;
-      D.profile.todos = D.profile.todos.filter(t => !t.done);
-      if (D.profile.todos.length < prevLen) {
-        changed = true;
-        console.log(`[DailyRollover] ✓ 已清除已完成待办：${prevLen} → ${D.profile.todos.length} 条`);
-      }
-    }
-
-    // 3. 保存并提示
-    if (changed) {
-      try { save(); } catch (e) { console.error('[DailyRollover] 保存失败:', e); }
-      toast('🌅 新的一天开始了！数据已更新');
-    }
-
-    return changed;
-  }
-
   const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
   const dateFromStr = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
   const dstr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -469,7 +399,7 @@
     const el = $(listSel); if (!el) return;
     el.innerHTML = entries.length
       ? entries.map(([m, v]) => `<div class="row"><div class="row-main"><div class="row-title">${m.replace("-", "年")}月</div></div><span class="num" style="font-weight:800;">${fmtFn(v)}</span><button class="mi-del" data-m="${m}">×</button></div>`).join("")
-      : emptyState('📭', '暂无记录', '开始记录你的第一笔数据吧', null, null);
+      : `<div class="empty">暂无记录</div>`;
     $$(listSel + " [data-m]").forEach((b) => (b.onclick = () => onDel(b.dataset.m)));
   }
   function renderFundLists() {
@@ -496,19 +426,6 @@
   /* ============ Toast ============ */
   let toastT;
   function toast(msg, type = "ok") { const el = $("#toast"); el.textContent = msg; el.className = "toast on toast-" + type; clearTimeout(toastT); toastT = setTimeout(() => (el.className = "toast"), 1800); }
-
-  /* ============ 空状态工厂（增强版） ============ */
-  function emptyState(icon, title, desc, actionText, actionOnClick) {
-    const actionHtml = actionText
-      ? `<button class="empty-action" data-empty-action="1">${actionText}</button>`
-      : '';
-    return `<div class="empty-state">
-      <div class="empty-icon">${icon}</div>
-      <div class="empty-title">${title}</div>
-      <div class="empty-desc">${desc}</div>
-      ${actionHtml}
-    </div>`;
-  }
 
   /* ============ Modal ============ */
   function openModal(title, html, onConfirm) {
@@ -552,39 +469,6 @@
     });
     const labels = series[0].labels || [];
     ctx.fillStyle = ct.text; ctx.textAlign = "center"; labels.forEach((lb, i) => { if (labels.length <= 8 || i % Math.ceil(labels.length / 7) === 0 || i === labels.length - 1) ctx.fillText(lb, xAt(i, labels.length), h - 10); });
-
-    // 返回数据点位置信息（用于 Tooltip）
-    return { pts: series[0].data.map((v, i) => ({ x: xAt(i, series[0].data.length), y: v == null ? null : yAt(v), v, label: labels[i] })), pad, cw, ch };
-  }
-
-  /* 带 Tooltip 的折线图（增强版） */
-  function drawLineWithTooltip(cv, series, opt = {}) {
-    const info = drawLine(cv, series, opt);
-    if (!info || !info.pts) return;
-
-    const tooltip = new ChartTooltip(cv);
-    const rect = cv.getBoundingClientRect();
-
-    cv.onmousemove = (e) => {
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-      // 找最近的数据点
-      let nearest = null;
-      let minDist = Infinity;
-      info.pts.forEach((p) => {
-        if (p.y == null) return;
-        const dist = Math.sqrt(Math.pow(p.x - mx, 2) + Math.pow(p.y - my, 2));
-        if (dist < minDist && dist < 30) { minDist = dist; nearest = p; }
-      });
-      if (nearest) {
-        tooltip.show(nearest.x, nearest.y, `${nearest.label}: ${opt.tooltipFmt ? opt.tooltipFmt(nearest.v) : nearest.v}`);
-        cv.style.cursor = 'pointer';
-      } else {
-        tooltip.hide();
-        cv.style.cursor = 'default';
-      }
-    };
-    cv.onmouseleave = () => { tooltip.hide(); cv.style.cursor = 'default'; };
   }
   function drawDoughnut(cv, items, opt = {}) {
     const { ctx, w, h } = setupCanvas(cv, opt.h || 230);
@@ -696,8 +580,7 @@
   /* ============ 渲染：总览 ============ */
   function renderOverview() {
     finApplyClass();
-    const t = effectiveToday();  // 使用"有效今天"（凌晨 3 点前算昨天）
-    const tg = dayTarget(t); const inT = intakeOf(t);
+    const t = todayStr(); const tg = dayTarget(t); const inT = intakeOf(t);
     const wToday = (D.nutrition.weight || []).some((x) => x.date === t);
     const water = (D.nutrition.water[t] || {}).water || 0;
     const nw = netWorth(); const ms = monthSummary(cmk());
@@ -924,8 +807,8 @@
             <div class="meal-group-title"><span style="color:${m.color}">${ic(m.k)}</span>${m.name}</div>
             <div class="meal-kcal">${Math.round(cal)} kcal</div>
           </div>
-          ${list.length ? items : `<div class="empty-state" style="padding:16px 8px;"><div class="empty-icon" style="font-size:32px;">🍽️</div><div class="empty-title" style="font-size:13px;">还没记录</div><div class="empty-desc" style="font-size:11px;">点击下方按钮添加</div></div>`}
-          <button class="meal-add-btn" data-addmeal="${m.k}">+ 添加${m.name}</button>
+          ${list.length ? items : `<div class="empty" style="padding:14px;">还没记录</div>`}
+          <button class="btn btn-ghost w-full mt-2" data-addmeal="${m.k}">+ 添加${m.name}</button>
         </div>`;
     }).join("");
 
@@ -969,7 +852,7 @@
 
       <div class="card mt-3">
         <div class="card-head"><div class="card-title">${t.slice(5)} 餐食记录</div><span class="card-sub">可补登 / 修改历史</span></div>
-        <div class="meal-grid">${mealHTML}</div>
+        ${mealHTML}
       </div>
 
       <div class="card mt-3">
@@ -1059,26 +942,6 @@
     const M_UNIT = "(?:毫克|mg|微克|μg)";
     const CAL_UNIT = "(?:千卡|大卡|卡路里|kcal|cal|calories)";
 
-    /* ========== 新增：预提取食物名称+份量（如"蛋白粉30g"、"鸡胸肉150g"）========== */
-    // 食物名模式：中文/英文单词（2字以上）+ 可选空格/括号 + 数字 + 单位
-    const DISH_PAT = /([\u4e00-\u9fff]{2,}|[A-Za-z]{2,})[\s\(（\[]{0,4}(\d+(?:\.\d+)?)\s*(克|g)\b/gi;
-    let dishMatch;
-    let extractedDish = "";
-    let dishEndIndex = -1;
-    while ((dishMatch = DISH_PAT.exec(t)) !== null) {
-      const fullMatch = dishMatch[0];
-      const dishName = dishMatch[1];
-      const dishQty = dishMatch[2];
-      const dishUnit = dishMatch[3];
-      // 排除：如果匹配到的"名称"实际上是营养标签的一部分
-      if (/^(?:总热量|热量|能量|碳水(?:化合物)?|蛋白质|脂肪|胆固醇|嘌呤|calories?|protein|fat|carbs?|cholesterol|purine)$/i.test(dishName)) continue;
-      // 取第一个有效的食物名+份量
-      if (!extractedDish) {
-        extractedDish = fullMatch.trim();
-        dishEndIndex = dishMatch.index + fullMatch.length;
-      }
-    }
-
   function numFor(labelPat, unitPat) {
     const labelRe = new RegExp(labelPat, "gi");
     let m;
@@ -1087,13 +950,6 @@
       if (/(饱和|反式)/.test(ctx)) continue; // 跳过饱和/反式脂肪，取总脂肪
       const after = t.slice(m.index + m[0].length);
       const head = after.slice(0, 60); // 仅看标签后紧邻一段，避免跨行/备注误抓数字
-
-      // 【关键修复】如果这个匹配位置在已提取的食物名称范围内，跳过！
-      // 例如"蛋白粉30g"中的"蛋白"不应该被当作"蛋白质"标签
-      if (extractedDish && m.index < dishEndIndex && m.index + m[0].length <= dishEndIndex + 5) {
-        continue;
-      }
-
       // 优先匹配「数字+单位」，否则取标签后第一个数字
       if (unitPat) {
         const um = head.match(new RegExp("(\\d+(?:\\.\\d+)?)\\s*" + unitPat, "i"));
@@ -1133,18 +989,10 @@
     const ch  = numFor("(?:胆固醇|cholesterol)", M_UNIT);
     const pu  = numFor("(?:嘌呤|purine)", M_UNIT);
 
-    // 名称抽取：优先使用预提取的"食物名+份量"，其次括号内【菜名】，最后取首个营养关键词/数字前的短语
+    // 名称抽取：优先括号内【菜名】，否则取首个营养关键词/数字前的短语；多菜品清单则保留整行
     let name = "";
-    // 【优先】如果预提取到了食物名+份量（如"蛋白粉30g"），直接使用
-    if (extractedDish && extractedDish.length >= 2 && extractedDish.length <= 50) {
-      name = extractedDish;
-    }
-    // 其次尝试括号内的菜名
-    if (!name) {
-      const bq = raw.match(/[【\[]([^】\]\n]{1,20})[】\]]/);
-      if (bq && !/营养|成分|分析|估算|计算|热量|能量/i.test(bq[1])) name = bq[1].trim();
-    }
-    // 最后 fallback 到原有逻辑
+    const bq = raw.match(/[【\[]([^】\]\n]{1,20})[】\]]/);
+    if (bq && !/营养|成分|分析|估算|计算|热量|能量/i.test(bq[1])) name = bq[1].trim();
     if (!name) {
       const lines = t.split(/[\n;；]+/).map((x) => x.trim()).filter(Boolean);
       const first = lines[0] || "";
@@ -1473,7 +1321,7 @@
 
   /* ============ 渲染：喝水 / 饮品 ============ */
   function renderWater() {
-    const t = effectiveToday();  // 使用"有效今天"（凌晨 3 点前算昨天）
+    const t = todayStr();
     const w = D.nutrition.water[t] || { water: 0, caffeine: 0, chlorogenic: 0, theophylline: 0, drinks: [] };
     const wlim = { water: 2500, caffeine: 250, chlorogenic: 500, theophylline: 150 };
     const wPct = clamp(w.water / 2000, 0, 1);
@@ -1590,7 +1438,7 @@
     if (e && e.parts.length) {
       const parts = e.parts.join("·");
       html += `<div class="row"><div class="row-ic" style="background:#d1fae5;color:#047857;">练</div><div class="row-main"><div class="row-title">${t.slice(5)} · ${parts}</div><div class="row-meta">${e.creatine ? '💊' + " 肌酸 " : ""}${e.fishOil ? '🐟' + " 鱼油" : ""}${e.creatine || e.fishOil ? "" : "已打卡"}</div></div><span class="tag tag-green">今日</span></div>`;
-    } else html += emptyState('🏋️', '今天还没训练', '点日历或动作 + 号打卡', null, null);
+    } else html += `<div class="empty">今天还没训练，点日历或动作 + 号打卡</div>`;
     $("#trainLog").innerHTML = html;
   }
 
@@ -1868,7 +1716,7 @@
 
   /* ============ 一键直达：快速喝水弹窗（绕过饮水页） ============ */
   function quickWaterModal() {
-    const t = effectiveToday();  // 使用"有效今天"（凌晨 3 点前算昨天）
+    const t = todayStr();
     const draw = () => {
       const w = D.nutrition.water[t] || { water: 0, caffeine: 0, chlorogenic: 0, theophylline: 0, drinks: [] };
       const wPct = clamp(w.water / 2000, 0, 1);
@@ -2194,7 +2042,7 @@
       const rr = D.punch[k]; const w = new Date(k).getDay(); const we = w === 0 || w === 6; const ts = rr.times || {};
       const parts = PUNCH_STEPS.map((st) => `${st.label}${ts[st.key] || "—"}`).join(" · ");
       return `<div class="row"><div class="row-main"><div class="row-title">${k.slice(5)}</div><div class="row-meta">${parts}</div></div><span class="tag ${we ? "tag-amber" : "tag-gray"}">${we ? "周末" : "工作日"}</span></div>`;
-    }).join("") : emptyState('📋', '还没有打卡记录', '开始记录你的每日打卡吧', null, null);
+    }).join("") : `<div class="empty">还没有打卡记录</div>`;
     $("#body-punch").innerHTML = `
       <div class="demo-badge">本地优先 · 数据存浏览器</div>
       <div class="card">
@@ -2314,22 +2162,10 @@
     bind();
     finApplyClass();
     initRipple();  // 初始化 ripple 波纹效果
-    initPWA();     // PWA 支持（SW + 安装提示）
-    initVisibilityRefresh();  // 标签页切换自动刷新
-    dailyRollover();  // 每日数据重置（凌晨 3 点生效）
-
-    // 添加噪点纹理
-    document.body.classList.add('noise-bg');
-
     if (SYNC_URL) syncPull(renderAll);
     else renderAll();
     rolloverFriv();
-    setInterval(() => {
-      // 每分钟检查：月度重置（非必要性开支）
-      if (rolloverFriv()) { if (curPage === "finance") renderFinance(); toast("非必要性开支已清空 · 新的一月 🎈"); }
-      // 每分钟检查：日重置（饮水、待办等）
-      if (dailyRollover()) { renderAll(); }
-    }, 60000);
+    setInterval(() => { if (rolloverFriv()) { if (curPage === "finance") renderFinance(); toast("非必要性开支已清空 · 新的一月 🎈"); } }, 60000);
   }
 
   /* ============ Ripple 波纹效果 ============ */
@@ -2337,137 +2173,22 @@
     document.addEventListener("click", (e) => {
       const btn = e.target.closest(".btn");
       if (!btn) return;
-
+      
       // 避免重复触发（已有 ripple 动画中的不新增）
       if (btn.querySelector(".ripple")) return;
-
+      
       const rect = btn.getBoundingClientRect();
       const size = Math.max(rect.width, rect.height) * 2;
       const x = e.clientX - rect.left - size / 2;
       const y = e.clientY - rect.top - size / 2;
-
+      
       const ripple = document.createElement("span");
       ripple.className = "ripple";
       ripple.style.cssText = `width:${size}px;height:${size}px;left:${x}px;top:${y}px;`;
-
+      
       btn.appendChild(ripple);
-
+      
       ripple.addEventListener("animationend", () => ripple.remove());
-    });
-  }
-
-  /* ============ 交错显示动画 (Stagger) ============ */
-  function staggerChildren(container, selector = '.stagger-item') {
-    if (!container) return;
-    container.querySelectorAll(selector).forEach((el, i) => {
-      el.classList.add('stagger-item');
-      el.style.animationDelay = `${i * 0.05}s`;
-    });
-  }
-
-  /* ============ 图表统一配色 ============ */
-  const CHART_COLORS = {
-    primary: '#0e9f6e',
-    success: '#10b981',
-    danger: '#f43f5e',
-    warning: '#f59e0b',
-    info: '#3b82f6',
-    violet: '#8b5cf6',
-    teal: '#14b8a6',
-    grid: 'rgba(0,0,0,0.06)',
-    text: '#64748b',
-  };
-
-  /* ============ 图表 Tooltip 组件 ============ */
-  class ChartTooltip {
-    constructor(canvas) {
-      this.canvas = canvas;
-      this.el = document.createElement('div');
-      this.el.className = 'chart-tooltip';
-      canvas.parentElement.appendChild(this.el);
-      this.hide();
-    }
-    show(x, y, content) {
-      this.el.innerHTML = content;
-      const rect = this.canvas.parentElement.getBoundingClientRect();
-      this.el.style.left = Math.min(x, rect.width - 120) + 'px';
-      this.el.style.top = (y - 40) + 'px';
-      this.el.classList.add('visible');
-    }
-    hide() { this.el.classList.remove('visible'); }
-  }
-
-  /* ============ 图表动画包装器 ============ */
-  function animateChart(drawFn, duration = 800) {
-    const start = performance.now();
-    function frame(now) {
-      const progress = Math.min((now - start) / duration, 1);
-      const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
-      drawFn(eased);
-      if (progress < 1) requestAnimationFrame(frame);
-    }
-    requestAnimationFrame(frame);
-  }
-
-  /* ============ PWA 支持 ============ */
-  let deferredPrompt;
-  function initPWA() {
-    // 注册 Service Worker
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-          .then((reg) => console.log('[SW] 注册成功，scope:', reg.scope))
-          .catch((err) => console.warn('[SW] 注册失败:', err));
-      });
-    }
-
-    // 安装提示
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      deferredPrompt = e;
-      showPWAInstallBanner();
-    });
-
-    window.addEventListener('appinstalled', () => {
-      toast('✅ 天龙人已安装为应用');
-      deferredPrompt = null;
-      hidePWAInstallBanner();
-    });
-  }
-
-  function showPWAInstallBanner() {
-    const existing = $('#pwaInstallBar');
-    if (existing) { existing.style.display = 'flex'; return; }
-
-    const bar = document.createElement('div');
-    bar.id = 'pwaInstallBar';
-    bar.className = 'pwa-install-bar';
-    bar.innerHTML = `
-      <span class="pwa-install-text">📱 安装天龙人到桌面，像 APP 一样使用</span>
-      <button class="pwa-install-btn" id="pwaInstallBtn">安装</button>
-    `;
-    const content = $('.content');
-    if (content) content.insertBefore(bar, content.firstChild);
-
-    $('#pwaInstallBtn').onclick = async () => {
-      if (!deferredPrompt) return;
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') toast('🎉 已安装到桌面！');
-      deferredPrompt = null;
-      hidePWAInstallBanner();
-    };
-  }
-
-  function hidePWAInstallBanner() {
-    const bar = $('#pwaInstallBar');
-    if (bar) bar.style.display = 'none';
-  }
-
-  /* ============ visibilitychange 自动刷新 ============ */
-  function initVisibilityRefresh() {
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden && _initialized) renderAll();
     });
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
