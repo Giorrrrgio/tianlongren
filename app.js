@@ -729,7 +729,6 @@
         </div>
         <div class="ov-clock" id="liveClock">
           <div class="ov-clock-time">--:--:--</div>
-          <div class="ov-clock-label">实时</div>
         </div>
       </div>
 
