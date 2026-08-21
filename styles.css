@@ -326,26 +326,59 @@ body {
 .m-val .target { font-size: var(--fs-sm); color: var(--ink-3); font-weight: 500; font-family: var(--font-sans); }
 
 /* ========== 餐食记录 ========== */
-.meal-group { border: 1px solid var(--border); border-radius: var(--r-md); padding: 14px; margin-bottom: 12px; background: var(--surface-2); }
-.meal-group-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.meal-group-title { display: flex; align-items: center; gap: 8px; font-weight: 800; }
-.meal-group-title .dot { width: 10px; height: 10px; border-radius: 50%; }
-.meal-kcal { font-size: var(--fs-sm); color: var(--ink-3); font-weight: 700; }
+/* 餐食记录 - 紧凑布局（一屏显示四餐） */
+.meal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.meal-group {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 10px;
+  margin-bottom: 0;
+  background: var(--surface-2);
+}
+.meal-group-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.meal-group-title { display: flex; align-items: center; gap: 6px; font-weight: 800; font-size: 13px; }
+.meal-group-title .dot { width: 8px; height: 8px; border-radius: 50%; }
+.meal-kcal { font-size: 11px; color: var(--ink-3); font-weight: 700; }
 .meal-item {
-  display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface);
-  border-radius: var(--r-sm); margin-bottom: 6px; border: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--surface);
+  border-radius: var(--r-sm); margin-bottom: 4px; border: 1px solid var(--border);
 }
 .meal-item:last-child { margin-bottom: 0; }
 .mi-main { flex: 1; min-width: 0; }
-.mi-name { font-weight: 700; font-size: 13px; }
-.mi-macros { font-size: var(--fs-sm); color: var(--ink-3); margin-top: 2px; }
-.mi-macros span { margin-right: 8px; }
-.mi-cal { font-weight: 800; font-size: 13px; font-family: var(--font-num); }
+.mi-name { font-weight: 700; font-size: 12px; }
+.mi-macros { font-size: 10px; color: var(--ink-3); margin-top: 1px; }
+.mi-macros span { margin-right: 6px; }
+.mi-cal { font-weight: 800; font-size: 12px; font-family: var(--font-num); }
 .mi-del {
-  width: 26px; height: 26px; border-radius: 50%; border: none; background: var(--rose-soft); color: var(--rose-ink);
-  cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center; transition: transform .12s;
+  width: 22px; height: 22px; border-radius: 50%; border: none; background: var(--rose-soft); color: var(--rose-ink);
+  cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; transition: transform .12s;
 }
 .mi-del:hover { transform: scale(1.12); }
+
+/* 紧凑型添加按钮 */
+.meal-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 4px 8px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--accent);
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: all .15s;
+}
+.meal-add-btn:hover {
+  background: var(--surface);
+  border-color: var(--accent);
+}
 .empty { text-align: center; padding: 30px; color: var(--ink-3); font-size: var(--fs-sm); }
 
 /* ========== 饮水 ========== */
@@ -511,6 +544,7 @@ textarea { width: 100%; min-height: 80px; resize: vertical; font-family: inherit
   .asset-legend { grid-template-columns: 1fr; }
   .trend-grid { grid-template-columns: 1fr; }
   .form-2, .form-3 { grid-template-columns: 1fr; }
+  .meal-grid { grid-template-columns: 1fr; } /* 手机端单列显示 */
 }
 
 /* ========== 打卡模块 ========== */
@@ -579,11 +613,61 @@ body.fin-locked .chart-box::after { content:"🔒 财务已加密"; position:abs
 .scroll-list::-webkit-scrollbar { width: 6px; }
 .scroll-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
-/* ========== 总览：大号日期 ========== */
-.ov-date { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 20px 24px; box-shadow: var(--sh); display:flex; flex-direction:column; gap:2px; }
+/* ========== 总览：大号日期 + 实时时钟 ========== */
+.ov-date { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 20px 24px; box-shadow: var(--sh); display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.ov-date-left { display:flex; flex-direction:column; gap:2px; }
 .ov-date-d { font-size: 46px; font-weight: 800; line-height: 1; letter-spacing: -1px; font-family: var(--font-num); }
 .ov-date-m { font-size: 15px; color: var(--text-2); font-weight: 600; }
 .ov-date-hi { font-size: 13px; color: var(--text-2); margin-top: 6px; }
+
+/* 实时时钟 */
+.ov-clock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--glass-2), transparent);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  padding: 12px 24px;
+  min-width: 140px;
+  position: relative;
+  overflow: hidden;
+}
+.ov-clock::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 0%, rgba(99,102,241,0.08), transparent 60%);
+  pointer-events: none;
+}
+.ov-clock-time {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  font-family: var(--font-num), "SF Mono", "Cascadia Code", "Consolas", monospace;
+  line-height: 1;
+  background: linear-gradient(135deg, var(--text-1), #6366f1);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.ov-clock-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  margin-top: 4px;
+  font-weight: 500;
+}
+/* 秒数淡色处理 — 通过 JS 给秒加 span */
+.ov-clock-time .sec {
+  font-size: 20px;
+  font-weight: 500;
+  opacity: 0.55;
+  vertical-align: baseline;
+  margin-left: 2px;
+}
 
 /* ========== 总览：今日营养 ========== */
 .ov-nutri { display:flex; gap:20px; align-items:center; flex-wrap:wrap; }
@@ -732,4 +816,141 @@ body::before {
   .card, .ov-date, .modal, .hero-dark { background: var(--surface); }
   .sidebar { background: var(--brand); }
   .stat, .macro, .meal-group, .meal-item, .cal-cell, .drink, .flow-btn { background: var(--surface-2); }
+}
+
+/* ========== 交错显示动画 (Stagger In) ========== */
+@keyframes staggerIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.stagger-item {
+  animation: staggerIn 0.4s ease-out backwards;
+}
+.stagger-item:nth-child(1) { animation-delay: 0.05s; }
+.stagger-item:nth-child(2) { animation-delay: 0.10s; }
+.stagger-item:nth-child(3) { animation-delay: 0.15s; }
+.stagger-item:nth-child(4) { animation-delay: 0.20s; }
+.stagger-item:nth-child(5) { animation-delay: 0.25s; }
+.stagger-item:nth-child(6) { animation-delay: 0.30s; }
+.stagger-item:nth-child(7) { animation-delay: 0.35s; }
+.stagger-item:nth-child(8) { animation-delay: 0.40s; }
+
+/* ========== 数字脉冲动画 (Pulse Glow) ========== */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(14, 159, 110, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(14, 159, 110, 0); }
+}
+.pulse-value { animation: pulse-glow 2s infinite; }
+
+/* ========== 噪点纹理 (Noise Texture) ========== */
+.noise-bg::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.03;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+/* ========== 减少动效偏好 ========== */
+@media (prefers-reduced-motion: reduce) {
+  .stagger-item { animation: none; }
+  .pulse-value { animation: none; }
+  .card:hover { transform: none; }
+  .ripple { display: none; }
+}
+
+/* ========== 空状态增强 (Empty State) ========== */
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--ink-3);
+}
+.empty-state .empty-icon {
+  font-size: 56px;
+  margin-bottom: 16px;
+  opacity: 0.6;
+}
+.empty-state .empty-title {
+  font-size: var(--fs-md);
+  font-weight: 700;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+}
+.empty-state .empty-desc {
+  font-size: var(--fs-sm);
+  margin-bottom: 18px;
+  line-height: 1.5;
+}
+.empty-state .empty-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: var(--r-full);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  border: none;
+  transition: all .15s;
+}
+.empty-state .empty-action:hover {
+  background: var(--accent-strong);
+  transform: translateY(-1px);
+}
+
+/* ========== 图表 Tooltip ========== */
+.chart-tooltip {
+  position: absolute;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0;
+  transition: opacity .15s;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.chart-tooltip.visible { opacity: 1; }
+
+/* ========== PWA 安装提示 ========== */
+.pwa-install-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-md);
+  margin-bottom: 16px;
+}
+.pwa-install-text {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+.pwa-install-btn {
+  padding: 8px 16px;
+  border-radius: var(--r-full);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  border: none;
+  transition: all .15s;
+  flex-shrink: 0;
+}
+.pwa-install-btn:hover {
+  background: var(--accent-strong);
 }
