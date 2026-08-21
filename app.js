@@ -936,7 +936,7 @@
         <div style="display:flex;align-items:center;gap:10px;">
           <button class="cal-nav" id="mdPrev" aria-label="前一天">‹</button>
           <div>
-            <div class="card-title" id="mdLabel">${t.slice(5)} · 周${WK[dateFromStr(t).getDay()]}</div>
+            <div class="card-title" id="mdLabel">${t.slice(5)} · 周${WK[dateFromStr(t).getDay()]} <span id="liveClock" style="font-size:13px;font-weight:400;color:var(--text-muted);margin-left:6px;"></span></div>
             <div class="card-sub">${t === todayStr() ? "今天 · 可改历史" : "历史日期 · 可补登 / 修改"}</div>
           </div>
           <button class="cal-nav" id="mdNext" aria-label="后一天">›</button>
@@ -2504,6 +2504,22 @@
     setThemeIcon(); renderAll();
   }
 
+  /* ============ 实时时钟 ============ */
+  let _clockTimer = null;
+  function startClock() {
+    const tick = () => {
+      const el = document.getElementById("liveClock");
+      if (!el) return;
+      const now = new Date();
+      const h = String(now.getHours()).padStart(2, "0");
+      const m = String(now.getMinutes()).padStart(2, "0");
+      const s = String(now.getSeconds()).padStart(2, "0");
+      el.textContent = h + ":" + m + ":" + s;
+    };
+    tick();
+    _clockTimer = setInterval(tick, 1000);
+  }
+
   function start() {
     setGreeting();
     setThemeIcon();
@@ -2516,6 +2532,9 @@
 
     // 添加噪点纹理
     document.body.classList.add('noise-bg');
+
+    // 启动实时时钟
+    startClock();
 
     if (SYNC_URL) syncPull(renderAll);
     else renderAll();
