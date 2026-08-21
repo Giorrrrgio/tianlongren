@@ -642,10 +642,10 @@ body.fin-locked .chart-box::after { content:"🔒 财务已加密"; position:abs
   pointer-events: none;
 }
 .ov-clock-time {
-  font-size: 32px;
-  font-weight: 700;
-  letter-spacing: 2px;
-  font-family: var(--font-num), "SF Mono", "Cascadia Code", "Consolas", monospace;
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  font-family: var(--font-num);
   line-height: 1;
   color: var(--text-1);
 }
@@ -663,11 +663,12 @@ body.fin-locked .chart-box::after { content:"🔒 财务已加密"; position:abs
 }
 /* 秒数淡色处理 — 通过 JS 给秒加 span */
 .ov-clock-time .sec {
-  font-size: 20px;
-  font-weight: 500;
-  opacity: 0.55;
+  font-size: 22px;
+  font-weight: 800;
+  font-family: var(--font-num);
+  opacity: 0.5;
   vertical-align: baseline;
-  margin-left: 2px;
+  margin-left: 1px;
 }
 
 /* ========== 总览：今日营养 ========== */
