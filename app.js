@@ -801,7 +801,7 @@
       const q = b.dataset.q;
       if (q === "weight") quickWeightModal();
       else if (q === "calendar") navigate("calendar");
-      else if (q === "meal") { curMealDate = todayStr(); openModal("添加餐食", `<div class="meal-pick"><button class="flow-btn" data-mk="breakfast">🍳 早餐</button><button class="flow-btn" data-mk="lunch">🍱 午餐</button><button class="flow-btn" data-mk="dinner">🍲 晚餐</button><button class="flow-btn" data-mk="snack">🍎 加餐</button></div>`); $$("#modalBody [data-mk]").forEach((b) => b.onclick = () => { const k = b.dataset.mk; closeModal(); addMealModal(k); }); }
+      else if (q === "meal") { curMealDate = effectiveToday(); openModal("添加餐食", `<div class="meal-pick"><button class="flow-btn" data-mk="breakfast">🍳 早餐</button><button class="flow-btn" data-mk="lunch">🍱 午餐</button><button class="flow-btn" data-mk="dinner">🍲 晚餐</button><button class="flow-btn" data-mk="snack">🍎 加餐</button></div>`); $$("#modalBody [data-mk]").forEach((b) => b.onclick = () => { const k = b.dataset.mk; closeModal(); addMealModal(k); }); }
       else if (q === "punchIn") punchModal();
       else if (q === "finance") quickTxnModal();
       else if (q === "water") quickWaterModal();
@@ -913,7 +913,7 @@
   }
 
   /* ============ 渲染：营养 ============ */
-  let curMealDate = todayStr();
+  let curMealDate = effectiveToday();
   function shiftMealDate(delta) { const d = dateFromStr(curMealDate); d.setDate(d.getDate() + delta); curMealDate = dstr(d); renderNutrition(); }
   function renderNutrition() {
     const t = curMealDate; const tg = dayTarget(t); const inT = intakeOf(t);
@@ -954,7 +954,7 @@
           <button class="cal-nav" id="mdPrev" aria-label="前一天">‹</button>
           <div>
             <div class="card-title" id="mdLabel">${t.slice(5)} · 周${WK[dateFromStr(t).getDay()]}</div>
-            <div class="card-sub">${t === todayStr() ? "今天 · 可改历史" : "历史日期 · 可补登 / 修改"}</div>
+            <div class="card-sub">${t === effectiveToday() ? "今天 · 可改历史" : "历史日期 · 可补登 / 修改"}</div>
           </div>
           <button class="cal-nav" id="mdNext" aria-label="后一天">›</button>
         </div>
@@ -997,7 +997,7 @@
     // 事件
     $("#mdPrev").onclick = () => shiftMealDate(-1);
     $("#mdNext").onclick = () => shiftMealDate(1);
-    $("#mdToday").onclick = () => { curMealDate = todayStr(); renderNutrition(); };
+    $("#mdToday").onclick = () => { curMealDate = effectiveToday(); renderNutrition(); };
     // 事件委托：餐食操作（删除/编辑/添加）
     $("#body-nutrition").onclick = (e) => {
       const d = e.target;
