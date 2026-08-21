@@ -767,3 +767,140 @@ body::before {
   .sidebar { background: var(--brand); }
   .stat, .macro, .meal-group, .meal-item, .cal-cell, .drink, .flow-btn { background: var(--surface-2); }
 }
+
+/* ========== 交错显示动画 (Stagger In) ========== */
+@keyframes staggerIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.stagger-item {
+  animation: staggerIn 0.4s ease-out backwards;
+}
+.stagger-item:nth-child(1) { animation-delay: 0.05s; }
+.stagger-item:nth-child(2) { animation-delay: 0.10s; }
+.stagger-item:nth-child(3) { animation-delay: 0.15s; }
+.stagger-item:nth-child(4) { animation-delay: 0.20s; }
+.stagger-item:nth-child(5) { animation-delay: 0.25s; }
+.stagger-item:nth-child(6) { animation-delay: 0.30s; }
+.stagger-item:nth-child(7) { animation-delay: 0.35s; }
+.stagger-item:nth-child(8) { animation-delay: 0.40s; }
+
+/* ========== 数字脉冲动画 (Pulse Glow) ========== */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(14, 159, 110, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(14, 159, 110, 0); }
+}
+.pulse-value { animation: pulse-glow 2s infinite; }
+
+/* ========== 噪点纹理 (Noise Texture) ========== */
+.noise-bg::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.03;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+/* ========== 减少动效偏好 ========== */
+@media (prefers-reduced-motion: reduce) {
+  .stagger-item { animation: none; }
+  .pulse-value { animation: none; }
+  .card:hover { transform: none; }
+  .ripple { display: none; }
+}
+
+/* ========== 空状态增强 (Empty State) ========== */
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--ink-3);
+}
+.empty-state .empty-icon {
+  font-size: 56px;
+  margin-bottom: 16px;
+  opacity: 0.6;
+}
+.empty-state .empty-title {
+  font-size: var(--fs-md);
+  font-weight: 700;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+}
+.empty-state .empty-desc {
+  font-size: var(--fs-sm);
+  margin-bottom: 18px;
+  line-height: 1.5;
+}
+.empty-state .empty-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: var(--r-full);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  border: none;
+  transition: all .15s;
+}
+.empty-state .empty-action:hover {
+  background: var(--accent-strong);
+  transform: translateY(-1px);
+}
+
+/* ========== 图表 Tooltip ========== */
+.chart-tooltip {
+  position: absolute;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0;
+  transition: opacity .15s;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.chart-tooltip.visible { opacity: 1; }
+
+/* ========== PWA 安装提示 ========== */
+.pwa-install-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-md);
+  margin-bottom: 16px;
+}
+.pwa-install-text {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+.pwa-install-btn {
+  padding: 8px 16px;
+  border-radius: var(--r-full);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  border: none;
+  transition: all .15s;
+  flex-shrink: 0;
+}
+.pwa-install-btn:hover {
+  background: var(--accent-strong);
+}
