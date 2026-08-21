@@ -1383,39 +1383,17 @@
       // 先尝试多菜品解析
       const meals = parseMultiMealText(txt);
       if (meals.length >= 2) {
-        // 多菜品：展示预览，用户确认后批量添加
-        const listHTML = meals.map((m, i) =>
-          `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);">
-            <span><strong>${i+1}.</strong> ${esc(m.name)}</span>
-            <span style="color:var(--text-muted);font-size:12px;">
-              ${m.cal ? m.cal+"kcal" : "-"} | ${m.c ? m.c+"g碳水" : "-"} | ${m.p ? m.p+"g蛋白" : "-"}
-            </span>
-          </div>`
-        ).join("");
-        openModal(`识别到 ${meals.length} 道菜`, `
-          <div class="card-sub mb-2">以下菜品将批量添加到<strong>${m.name}</strong>：</div>
-          <div style="max-height:300px;overflow-y:auto;">${listHTML}</div>
-          <div class="card-sub mt-2" style="color:var(--warning);">⚠️ 营养值按份量比例估算，请后续核对</div>
-          <button class="btn btn-primary w-full mt-2" id="batchAddBtn">✅ 全部添加 (${meals.length}道)</button>
-          <button class="btn w-full mt-1" onclick="closeModal()">取消</button>
-        `);
-        // 绑定批量添加按钮
-        $("#batchAddBtn").onclick = () => {
-          meals.forEach((mi) => {
-            dayMeals(curMealDate)[mealKey].push({
-              id: Date.now() + Math.random(),
-              name: mi.name,
-              calories: +mi.cal || 0,
-              carbs: +mi.c || 0,
-              protein: +mi.p || 0,
-              fat: +mi.f || 0,
-              cholesterol: +mi.ch || 0,
-              purine: +mi.pu || 0,
-            });
-          });
-          save(); closeModal(); renderNutrition(); renderOverview();
-          toast(`已添加 ${meals.length} 道菜 · ${curMealDate.slice(5)}`);
-        };
+        // 多菜品：合并成一条记录，名称用逗号隔开，营养值用汇总
+        const allNames = meals.map((m) => m.name).join("，");
+        const hasSummary = meals[0].cal !== "";
+        $("#mName").value = allNames;
+        $("#mCal").value = hasSummary ? meals.reduce((s, m) => s + (+m.cal || 0), 0) : "";
+        $("#mC").value   = hasSummary ? meals.reduce((s, m) => s + (+m.c || 0), 0).toFixed(1) : "";
+        $("#mP").value   = hasSummary ? meals.reduce((s, m) => s + (+m.p || 0), 0).toFixed(1) : "";
+        $("#mF").value   = hasSummary ? meals.reduce((s, m) => s + (+m.f || 0), 0).toFixed(1) : "";
+        $("#mCh").value  = hasSummary ? Math.round(meals.reduce((s, m) => s + (+m.ch || 0), 0)) : "";
+        $("#mPu").value  = hasSummary ? Math.round(meals.reduce((s, m) => s + (+m.pu || 0), 0)) : "";
+        toast(`已识别 ${meals.length} 道菜并合并填充`);
       } else {
         // 单菜品：原有逻辑
         const r = meals[0] || parseNutritionText(txt);
