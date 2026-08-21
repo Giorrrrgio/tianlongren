@@ -2409,14 +2409,35 @@
       else { const wm = toMin(next.win); banner = (nm >= wm) ? `⏰ 该「${next.label}」了（建议 ${next.win}）` : `距「${next.label}」还有 ${wm - nm} 分钟（建议 ${next.win}）`; }
     }
     const keys = Object.keys(D.punch).sort().reverse().slice(0, 7);
+    // 迟到补偿：上班迟到≤15min，下班等量延迟则算准时
+    const COMP_MAX = 15; // 补偿上限分钟数
+    const PAIRS = [[0,1],[2,3]]; // [amIn↔amOut, pmIn↔pmOut]
     const hist = keys.length ? keys.map((k) => {
       const rr = D.punch[k]; const w = new Date(k).getDay(); const we = w === 0 || w === 6; const ts = rr.times || {};
-      const parts = PUNCH_STEPS.map((st) => {
+      // 预计算每个时段的偏差（正=迟到/延迟，负=早到/早退）
+      const dev = {};
+      PUNCH_STEPS.forEach((st, i) => {
+        const v = ts[st.key]; if (!v || !/^\d{1,2}:\d{2}$/.test(v)) { dev[i] = null; return; }
+        dev[i] = toMin(v) - toMin(st.win); // 上班：正=迟到；下班：正=延迟(加班)
+      });
+      // 判断每个时段是否"准时"（含补偿）
+      const isOk = (idx) => {
+        const st = PUNCH_STEPS[idx], d = dev[idx];
+        if (d == null) return null; // 未打卡
+        if (st.leave) return d >= 0; // 下班：不早退即OK
+        // 上班：先看是否本身准时
+        if (d <= 0) return true;
+        // 迟到了，查补偿（上限15min）
+        if (d > COMP_MAX) return false;
+        const pairIdx = PAIRS.find(p => p[0] === idx)?.[1];
+        if (pairIdx == null || dev[pairIdx] == null || dev[pairIdx] < d) return false;
+        return true; // 下班延迟≥迟到时长，补偿成功
+      };
+      const parts = PUNCH_STEPS.map((st, i) => {
         const v = ts[st.key];
         if (!v) return `${st.label}<span style="color:var(--text-3)">—</span>`;
-        const wm = toMin(st.win), vm = toMin(v);
-        const ok = st.leave ? (vm >= wm) : (vm <= wm);
-        const color = ok ? "var(--green)" : "var(--rose)";
+        const ok = isOk(i);
+        const color = ok === true ? "var(--green)" : "var(--rose)";
         return `${st.label}<span style="color:${color};font-weight:600">${v}</span>`;
       }).join(" · ");
       return `<div class="row"><div class="row-main"><div class="row-title">${k.slice(5)}</div><div class="row-meta">${parts}</div></div><span class="tag ${we ? "tag-amber" : "tag-gray"}">${we ? "周末" : "工作日"}</span></div>`;
