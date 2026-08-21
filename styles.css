@@ -732,12 +732,10 @@ body::before {
 
 /* ---- 侧边栏：深色玻璃 ---- */
 .sidebar {
-  background: rgba(17, 19, 25, .58);
-  -webkit-backdrop-filter: blur(28px) saturate(160%);
-  backdrop-filter: blur(28px) saturate(160%);
-  border-right: 1px solid rgba(255, 255, 255, .09);
+  background: linear-gradient(165deg, #0a3d28 0%, #0d5c3a 35%, #119a58 70%, #14b86a 100%);
+  border-right: 1px solid rgba(255, 255, 255, .12);
 }
-[data-theme="dark"] .sidebar { background: rgba(14, 15, 20, .55); }
+[data-theme="dark"] .sidebar { background: linear-gradient(165deg, #062a1c 0%, #0a4029 35%, #0e7a45 70%, #109654 100%); }
 [data-theme="dark"] .brand-mark { box-shadow: 0 6px 20px rgba(14, 159, 110, .4); }
 .nav-item { color: #c3cad8; }
 .nav-item:hover { background: rgba(255, 255, 255, .09); }
@@ -810,7 +808,7 @@ body::before {
 /* ---- 降级：不支持 backdrop-filter 的浏览器用更实的底色 ---- */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .card, .ov-date, .modal, .hero-dark { background: var(--surface); }
-  .sidebar { background: var(--brand); }
+  .sidebar { background: linear-gradient(165deg, #0a3d28, #119a58); }
   .stat, .macro, .meal-group, .meal-item, .cal-cell, .drink, .flow-btn { background: var(--surface-2); }
 }
 
