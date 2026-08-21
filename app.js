@@ -15,7 +15,7 @@
   const deepClone = (o) => (o == null ? null : JSON.parse(JSON.stringify(o)));
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
   const esc = (s) => { const d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; };
-  const fmt = (n) => (Number(n) || 0).toLocaleString("zh-CN", { maximumFractionDigits: 0 });
+  const fmt = (n) => (Number(n) || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmt2 = (n) => (Number(n) || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fm = (v) => { const a = Math.abs(v); return a >= 10000 ? (v / 10000).toFixed(2) + "万" : fmt2(v); };
 
@@ -151,6 +151,76 @@
     renderFrivList(); renderFinance();
     toast("已记一笔乱花 💸");
   }
+  /* ============ 每日数据自动重置（凌晨 3 点生效） ============ */
+  // 记录上次重置的日期（格式：YYYY-MM-DD），用于检测跨天
+  let _lastRolloverDate = null;
+
+  /**
+   * 获取"有效的今天"——如果当前时间 < 3:00，则视为"昨天"还在继续
+   * 这样可以确保凌晨 0-3 点之间打开页面时，仍然显示"昨天"的数据
+   * 只有过了 3:00 才算真正进入新的一天
+   */
+  function effectiveToday() {
+    const d = new Date();
+    if (d.getHours() < 3) {
+      d.setDate(d.getDate() - 1);
+    }
+    return dstr(d);
+  }
+
+  /**
+   * 每日数据重置函数
+   * 检测是否跨过凌晨 3 点，如果是则：
+   * 1. 清空饮水记录
+   * 2. 重置待办事项（未完成的保留，已完成的清除）
+   *
+   * @returns {boolean} 是否发生了重置
+   */
+  function dailyRollover() {
+    const effToday = effectiveToday();
+
+    // 如果已经重置过今天的，跳过
+    if (_lastRolloverDate === effToday) return false;
+
+    const prevDate = _lastRolloverDate;
+    _lastRolloverDate = effToday;
+
+    // 首次加载时不重置（除非检测到日期确实变了）
+    if (!prevDate) return false;
+
+    // 检测是否真的跨天了
+    if (prevDate === effToday) return false;
+
+    console.log(`[DailyRollover] 检测到新的一天：${prevDate} → ${effToday}，执行数据重置...`);
+
+    let changed = false;
+
+    // 1. 清空饮水记录（只清空"旧今天"的，保留历史）
+    if (D.nutrition && D.nutrition.water && D.nutrition.water[prevDate]) {
+      delete D.nutrition.water[prevDate];
+      changed = true;
+      console.log('[DailyRollover] ✓ 已清空昨日饮水记录');
+    }
+
+    // 2. 处理待办事项：清除已完成的，未完成的保留
+    if (D.profile && D.profile.todos && D.profile.todos.length > 0) {
+      const prevLen = D.profile.todos.length;
+      D.profile.todos = D.profile.todos.filter(t => !t.done);
+      if (D.profile.todos.length < prevLen) {
+        changed = true;
+        console.log(`[DailyRollover] ✓ 已清除已完成待办：${prevLen} → ${D.profile.todos.length} 条`);
+      }
+    }
+
+    // 3. 保存并提示
+    if (changed) {
+      try { save(); } catch (e) { console.error('[DailyRollover] 保存失败:', e); }
+      toast('🌅 新的一天开始了！数据已更新');
+    }
+
+    return changed;
+  }
+
   const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
   const dateFromStr = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
   const dstr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -189,83 +259,8 @@
   function catIcon(c) { return ic(CAT_ICON[c] || 'dot'); }
   function carbIcon(type) { return ic('carb' + (type || '')[0].toUpperCase() + (type || '').slice(1)); }
 
-  /* ============ 种子 / 演示数据 ============ */
-  function demo() {
-    const SEED = window.__SEED__;
-    if (SEED && SEED.__v === SEED_VERSION) return deepClone(SEED);
-    const t = todayStr();
-    return {
-      profile: {
-        name: "我", avatar: "我",
-        body: { gender: "male", age: 27, height: 171.5, weight: 66.4, activity: 1.725, gap: 300 },
-        level: { lv: 3, xp: 60, max: 100 },
-        todos: [
-          { id: "td1", text: "记录饮食 早/午/晚", done: false },
-          { id: "td2", text: "喝够 2000ml 水", done: false },
-          { id: "td3", text: "完成训练打卡", done: false },
-          { id: "td4", text: "记录体重体脂", done: false },
-        ],
-      },
-      nutrition: {
-        daily: {
-          [t]: {
-            breakfast: [{ id: 1, name: "燕麦粥 + 鸡蛋", calories: 380, carbs: 45, protein: 18, fat: 12, cholesterol: 220, purine: 30 }],
-            lunch: [{ id: 2, name: "鸡胸肉 + 糙米饭", calories: 560, carbs: 60, protein: 52, fat: 10, cholesterol: 120, purine: 120 }],
-            dinner: [],
-            snack: [{ id: 3, name: "希腊酸奶 + 蓝莓", calories: 180, carbs: 20, protein: 14, fat: 5, cholesterol: 30, purine: 10 }],
-          },
-        },
-        weight: [
-          { date: "2026-08-01", weight: 69.2, fatRate: 22, muscleRate: 35 },
-          { date: "2026-08-04", weight: 68.5, fatRate: 21.5, muscleRate: 35.5 },
-          { date: "2026-08-07", weight: 67.7, fatRate: 21, muscleRate: 36 },
-          { date: "2026-08-09", weight: 67.6, fatRate: 20.5, muscleRate: 36.2 },
-        ],
-        water: {
-          [t]: { water: 1200, caffeine: 60, chlorogenic: 60, theophylline: 4.17, drinks: [{ name: "咖啡", time: "09:12" }] },
-        },
-        drinks: [
-          { id: "d1", name: "水", water: 200, caffeine: 0, chlorogenic: 0, theophylline: 0 },
-          { id: "d2", name: "茶", water: 200, caffeine: 6.67, chlorogenic: 0, theophylline: 4.17 },
-          { id: "d3", name: "咖啡", water: 250, caffeine: 60, chlorogenic: 60, theophylline: 0 },
-        ],
-        trendDays: 7,
-      },
-      fitness: {
-        expiry: "2026-09-05",
-        calendar: {
-          "2026-08-09": { parts: ["休息"], creatine: false, fishOil: false },
-          "2026-08-08": { parts: ["胸", "背"], creatine: true, fishOil: true },
-          "2026-08-06": { parts: ["肩", "核心"], creatine: true, fishOil: false },
-          "2026-08-04": { parts: ["腿", "臀"], creatine: true, fishOil: true },
-          [t]: { parts: ["胸"], creatine: false, fishOil: false },
-        },
-        actions: {
-          胸: [{ name: "史密斯推胸", maxWeight: 25, sets: 3 }, { name: "蝴蝶机夹胸", maxWeight: 0, sets: 2 }],
-          肩: [{ name: "器械推肩", maxWeight: 15, sets: 3 }],
-          背: [{ name: "高位下拉", maxWeight: 50, sets: 3 }, { name: "坐姿划船", maxWeight: 30, sets: 3 }],
-          臂: [{ name: "二头弯举", maxWeight: 12, sets: 2 }],
-          腿: [{ name: "哈克深蹲", maxWeight: 30, sets: 3 }, { name: "倒蹬机", maxWeight: 60, sets: 3 }],
-          臀: [{ name: "髋外展", maxWeight: 54, sets: 3 }],
-          有氧: [],
-        },
-      },
-      finance: {
-        txns: [],
-        msets: {},
-        ecats: ["餐饮", "交通", "购物", "住房", "娱乐", "医疗", "数码", "日用", "其他"],
-        icats: ["工资", "兼职", "父母资助", "投资收益", "礼金", "退款", "其他"],
-        bals: {},
-        invs: [],
-        debts: [],
-        hfund: {}, sfund: {},
-        frivolous: { month: cmk(), items: [] },
-      },
-    };
-  }
-
-  // 真正清空：所有记录为空，但保留可运行的配置与个人信息结构（不会重新灌入示例数据）
-  function emptyWorkspace() {
+  /* ============ 工作区工厂（种子 / 空白共用） ============ */
+  function _createBaseWorkspace() {
     return {
       profile: {
         name: "我", avatar: "我",
@@ -301,6 +296,16 @@
         frivolous: { month: cmk(), items: [] },
       },
     };
+  }
+  // 种子数据：优先使用外部注入的 SEED，否则返回空白工作区
+  function demo() {
+    const SEED = window.__SEED__;
+    if (SEED && SEED.__v === SEED_VERSION) return deepClone(SEED);
+    return _createBaseWorkspace();
+  }
+  // 真正清空：保留可运行的配置结构，清空所有记录
+  function emptyWorkspace() {
+    return _createBaseWorkspace();
   }
 
   // ---- 存档读取 / 兼容性层 ----
@@ -645,7 +650,8 @@
   /* ============ 渲染：总览 ============ */
   function renderOverview() {
     finApplyClass();
-    const t = todayStr(); const tg = dayTarget(t); const inT = intakeOf(t);
+    const t = effectiveToday();  // 使用"有效今天"（凌晨 3 点前算昨天）
+    const tg = dayTarget(t); const inT = intakeOf(t);
     const wToday = (D.nutrition.weight || []).some((x) => x.date === t);
     const water = (D.nutrition.water[t] || {}).water || 0;
     const nw = netWorth(); const ms = monthSummary(cmk());
@@ -666,7 +672,7 @@
     const ctype = carbTypeOf(t);
 
     $("#body-overview").innerHTML = `
-      <div class="demo-badge">已载入你的存档 · 设置里可导出 / 重置</div>
+      <div class="demo-badge">本地优先 · 数据存浏览器</div>
 
       <!-- 大号日期 -->
       <div class="ov-date">
@@ -758,13 +764,16 @@
       <div class="todo-text">${esc(x.text)}</div>
       <button class="mi-del" data-tododel="${x.id}" title="删除">×</button>
     </div>`).join("") : `<div class="card-sub">还没有待办，下面加一条吧</div>`;
-    $$("#ovTodo [data-todook]").forEach((b) => b.onclick = () => {
-      const it = (D.profile.todos || []).find((x) => x.id === b.dataset.todook); if (!it) return;
-      it.done = !it.done; save(); renderOverview();
-    });
-    $$("#ovTodo [data-tododel]").forEach((b) => b.onclick = () => {
-      D.profile.todos = (D.profile.todos || []).filter((x) => x.id !== b.dataset.tododel); save(); renderOverview();
-    });
+    // 事件委托：待办勾选/删除
+    $("#ovTodo").onclick = (e) => {
+      const tgt = e.target;
+      if (tgt.dataset.todook) {
+        const it = (D.profile.todos || []).find((x) => x.id === tgt.dataset.todook); if (!it) return;
+        it.done = !it.done; save(); renderOverview();
+      } else if (tgt.dataset.tododel) {
+        D.profile.todos = (D.profile.todos || []).filter((x) => x.id !== tgt.dataset.tododel); save(); renderOverview();
+      }
+    };
     $("#todoAdd").onclick = () => {
       const v = $("#todoInput").value.trim(); if (!v) return;
       if (!D.profile.todos) D.profile.todos = [];
@@ -875,7 +884,7 @@
     }).join("");
 
     $("#body-nutrition").innerHTML = `
-      <div class="demo-badge">已载入你的存档 · 设置里可导出 / 重置</div>
+      <div class="demo-badge">本地优先 · 数据存浏览器</div>
 
       <div class="card" style="display:flex;align-items:center;gap:12px;justify-content:space-between;">
         <div style="display:flex;align-items:center;gap:10px;">
@@ -926,9 +935,13 @@
     $("#mdPrev").onclick = () => shiftMealDate(-1);
     $("#mdNext").onclick = () => shiftMealDate(1);
     $("#mdToday").onclick = () => { curMealDate = todayStr(); renderNutrition(); };
-    $$("#body-nutrition [data-delmeal]").forEach((b) => b.onclick = () => { const [mk, id] = b.dataset.delmeal.split(":"); dayMeals(t)[mk] = dayMeals(t)[mk].filter((x) => String(x.id) !== id); save(); renderNutrition(); renderOverview(); });
-    $$("#body-nutrition [data-editmeal]").forEach((b) => b.onclick = () => { const [mk, id] = b.dataset.editmeal.split(":"); editMeal(t, mk, +id); });
-    $$("#body-nutrition [data-addmeal]").forEach((b) => b.onclick = () => addMealModal(b.dataset.addmeal));
+    // 事件委托：餐食操作（删除/编辑/添加）
+    $("#body-nutrition").onclick = (e) => {
+      const d = e.target;
+      if (d.dataset.delmeal) { const [mk, id] = d.dataset.delmeal.split(":"); dayMeals(t)[mk] = dayMeals(t)[mk].filter((x) => String(x.id) !== id); save(); renderNutrition(); renderOverview(); }
+      else if (d.dataset.editmeal) { const [mk, id] = d.dataset.editmeal.split(":"); editMeal(t, mk, +id); }
+      else if (d.dataset.addmeal) addMealModal(d.dataset.addmeal);
+    };
   }
 
   function waterBars(w, lim) {
@@ -1000,6 +1013,26 @@
     const M_UNIT = "(?:毫克|mg|微克|μg)";
     const CAL_UNIT = "(?:千卡|大卡|卡路里|kcal|cal|calories)";
 
+    /* ========== 新增：预提取食物名称+份量（如"蛋白粉30g"、"鸡胸肉150g"）========== */
+    // 食物名模式：中文/英文单词（2字以上）+ 可选空格/括号 + 数字 + 单位
+    const DISH_PAT = /([\u4e00-\u9fff]{2,}|[A-Za-z]{2,})[\s\(（\[]{0,4}(\d+(?:\.\d+)?)\s*(克|g)\b/gi;
+    let dishMatch;
+    let extractedDish = "";
+    let dishEndIndex = -1;
+    while ((dishMatch = DISH_PAT.exec(t)) !== null) {
+      const fullMatch = dishMatch[0];
+      const dishName = dishMatch[1];
+      const dishQty = dishMatch[2];
+      const dishUnit = dishMatch[3];
+      // 排除：如果匹配到的"名称"实际上是营养标签的一部分
+      if (/^(?:总热量|热量|能量|碳水(?:化合物)?|蛋白质|脂肪|胆固醇|嘌呤|calories?|protein|fat|carbs?|cholesterol|purine)$/i.test(dishName)) continue;
+      // 取第一个有效的食物名+份量
+      if (!extractedDish) {
+        extractedDish = fullMatch.trim();
+        dishEndIndex = dishMatch.index + fullMatch.length;
+      }
+    }
+
   function numFor(labelPat, unitPat) {
     const labelRe = new RegExp(labelPat, "gi");
     let m;
@@ -1008,6 +1041,13 @@
       if (/(饱和|反式)/.test(ctx)) continue; // 跳过饱和/反式脂肪，取总脂肪
       const after = t.slice(m.index + m[0].length);
       const head = after.slice(0, 60); // 仅看标签后紧邻一段，避免跨行/备注误抓数字
+
+      // 【关键修复】如果这个匹配位置在已提取的食物名称范围内，跳过！
+      // 例如"蛋白粉30g"中的"蛋白"不应该被当作"蛋白质"标签
+      if (extractedDish && m.index < dishEndIndex && m.index + m[0].length <= dishEndIndex + 5) {
+        continue;
+      }
+
       // 优先匹配「数字+单位」，否则取标签后第一个数字
       if (unitPat) {
         const um = head.match(new RegExp("(\\d+(?:\\.\\d+)?)\\s*" + unitPat, "i"));
@@ -1047,10 +1087,18 @@
     const ch  = numFor("(?:胆固醇|cholesterol)", M_UNIT);
     const pu  = numFor("(?:嘌呤|purine)", M_UNIT);
 
-    // 名称抽取：优先括号内【菜名】，否则取首个营养关键词/数字前的短语；多菜品清单则保留整行
+    // 名称抽取：优先使用预提取的"食物名+份量"，其次括号内【菜名】，最后取首个营养关键词/数字前的短语
     let name = "";
-    const bq = raw.match(/[【\[]([^】\]\n]{1,20})[】\]]/);
-    if (bq && !/营养|成分|分析|估算|计算|热量|能量/i.test(bq[1])) name = bq[1].trim();
+    // 【优先】如果预提取到了食物名+份量（如"蛋白粉30g"），直接使用
+    if (extractedDish && extractedDish.length >= 2 && extractedDish.length <= 50) {
+      name = extractedDish;
+    }
+    // 其次尝试括号内的菜名
+    if (!name) {
+      const bq = raw.match(/[【\[]([^】\]\n]{1,20})[】\]]/);
+      if (bq && !/营养|成分|分析|估算|计算|热量|能量/i.test(bq[1])) name = bq[1].trim();
+    }
+    // 最后 fallback 到原有逻辑
     if (!name) {
       const lines = t.split(/[\n;；]+/).map((x) => x.trim()).filter(Boolean);
       const first = lines[0] || "";
@@ -1170,7 +1218,7 @@
     const ft = D.fitness; const t = todayStr();
 
     $("#body-fitness").innerHTML = `
-      <div class="demo-badge">已载入你的存档 · 设置里可导出 / 重置</div>
+      <div class="demo-badge">本地优先 · 数据存浏览器</div>
       <div class="mt-3" id="trainSections"></div>
 
       <div class="card mt-3">
@@ -1215,7 +1263,7 @@
     const ft = D.fitness; const exp = ft.expiry; const expD = dateFromStr(exp); const today = new Date();
     const diff = Math.ceil((expD - today) / 86400000);
     $("#body-calendar").innerHTML = `
-      <div class="demo-badge">已载入你的存档 · 设置里可导出 / 重置</div>
+      <div class="demo-badge">本地优先 · 数据存浏览器</div>
       <div class="card" style="border-left:4px solid var(--amber);">
         <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;">
           <div style="width:56px;height:56px;border-radius:16px;background:var(--amber-soft);display:flex;align-items:center;justify-content:center;font-size:28px;">🎫</div>
@@ -1268,7 +1316,7 @@
       </div>`;
 
     $("#body-weight").innerHTML = `
-      <div class="demo-badge">已载入你的存档 · 设置里可导出 / 重置</div>
+      <div class="demo-badge">本地优先 · 数据存浏览器</div>
 
       <!-- 看板1：身体三参数（最新） -->
       <div class="card">
@@ -1379,7 +1427,7 @@
 
   /* ============ 渲染：喝水 / 饮品 ============ */
   function renderWater() {
-    const t = todayStr();
+    const t = effectiveToday();  // 使用"有效今天"（凌晨 3 点前算昨天）
     const w = D.nutrition.water[t] || { water: 0, caffeine: 0, chlorogenic: 0, theophylline: 0, drinks: [] };
     const wlim = { water: 2500, caffeine: 250, chlorogenic: 500, theophylline: 150 };
     const wPct = clamp(w.water / 2000, 0, 1);
@@ -1388,7 +1436,7 @@
       : `<div class="card-sub">今天还没记录饮品</div>`;
     const drinkBtns = (D.nutrition.drinks || []).map((d) => `<button class="drink" data-drink="${d.id}">${drinkIcon(d.name)} ${esc(d.name)} +${d.water}ml</button>`).join("");
     $("#body-water").innerHTML = `
-      <div class="demo-badge">已载入你的存档 · 设置里可导出 / 重置</div>
+      <div class="demo-badge">本地优先 · 数据存浏览器</div>
       <div class="card">
         <div class="card-head">
           <div class="card-title">今日饮水 / 饮品</div>
@@ -1510,7 +1558,7 @@
     finApplyClass();
     $("#body-finance").innerHTML = `
       ${finLockBar()}
-      <div class="demo-badge">已载入你的存档 · 设置里可导出 / 重置</div>
+      <div class="demo-badge">本地优先 · 数据存浏览器</div>
 
       <!-- 单一 hero：净资产 + 4 个核心指标 + 同比 -->
       <div class="hero-dark">
@@ -1774,7 +1822,7 @@
 
   /* ============ 一键直达：快速喝水弹窗（绕过饮水页） ============ */
   function quickWaterModal() {
-    const t = todayStr();
+    const t = effectiveToday();  // 使用"有效今天"（凌晨 3 点前算昨天）
     const draw = () => {
       const w = D.nutrition.water[t] || { water: 0, caffeine: 0, chlorogenic: 0, theophylline: 0, drinks: [] };
       const wPct = clamp(w.water / 2000, 0, 1);
@@ -1981,11 +2029,11 @@
           <button class="btn btn-sm" id="exportBtn">导出存档</button>
           <button class="btn btn-sm btn-ghost" id="importBtn">导入存档</button>
           <input type="file" id="importFile" accept=".json" style="display:none;">
-          <button class="btn btn-sm" id="resetBtn">恢复示例数据</button>
-          <button class="btn btn-sm btn-rose" id="clearBtn">清空数据</button>
+          <button class="btn btn-sm" id="resetBtn">重置工作区</button>
+          <button class="btn btn-sm btn-rose" id="clearBtn">清空所有数据</button>
         </div>
         <div class="card-sub mt-2" id="syncStatus">${SYNC_URL ? "已配置同步地址（自动）" : "未配置 · 仅本地 + 手动导出导入"}</div>
-        <div class="demo-note mt-2">⚠️ 初次打开默认展示的是<b>示例数据</b>（非真实记录，便于预览功能）。点击「清空数据」即可变为空白工作区；或「恢复示例数据」重新载入。数据仅存于你自己的浏览器，发给他人不会带出你的记录。</div>
+        <div class="demo-note mt-2">💡 数据完全存储在浏览器本地（localStorage），不会上传到任何服务器。可随时导出备份，或重置为空白状态重新开始。</div>
       </div>
 
       <div class="card mt-3">
@@ -2035,10 +2083,10 @@
         D = n; save(); renderAll(); toast("导入成功 · 已载入你的存档");
       } catch (err) { toast("文件解析失败，请确认是导出的 JSON", "warn"); }
     }; r.readAsText(f); e.target.value = ""; };
-    $("#resetBtn").onclick = () => { if (confirm("恢复为示例数据？当前记录将被示例数据覆盖。")) { D = demo(); save(); renderAll(); toast("已恢复示例数据"); } };
+    $("#resetBtn").onclick = () => { if (confirm("重置为空白工作区？所有记录将被清空，配置保留。")) { D = demo(); save(); renderAll(); toast("已重置为空白工作区"); } };
     const sfl = $("#setFinLock"); if (sfl) sfl.onclick = finToggle;
     const sfp = $("#setFinPin"); if (sfp) sfp.onclick = finChangePin;
-    $("#clearBtn").onclick = () => { if (confirm("清空全部记录？将变为空白工作区（不再有示例数据），不可恢复。")) { localStorage.removeItem(STORE); D = emptyWorkspace(); save(); renderAll(); toast("已清空所有数据"); } };
+    $("#clearBtn").onclick = () => { if (confirm("清空所有数据？将变为空白工作区，不可恢复（建议先导出备份）。")) { localStorage.removeItem(STORE); D = emptyWorkspace(); save(); renderAll(); toast("已清空所有数据"); } };
     const syncUrlInput = $("#syncUrl");
     if (syncUrlInput) syncUrlInput.onchange = () => { SYNC_URL = syncUrlInput.value.trim(); try { localStorage.setItem("tlr_sync_url", SYNC_URL); } catch (e) {} const s = $("#syncStatus"); if (s) s.textContent = SYNC_URL ? "已配置同步地址（自动）" : "未配置 · 仅本地 + 手动导出导入"; toast(SYNC_URL ? "同步地址已保存" : "已关闭自动同步"); if (SYNC_URL) syncPull(renderAll); };
     const syncNowBtn = $("#syncNow");
@@ -2113,11 +2161,14 @@
         <div class="card-head"><div class="card-title">近期打卡</div></div>
         <div class="punch-hist">${hist}</div>
       </div>`;
-    $$("#body-punch .punch-time").forEach((inp) => (inp.onchange = () => { punchRec(t).times[inp.dataset.pk] = inp.value; save(); renderPunch(); }));
-    $$("#body-punch [data-now]").forEach((b) => (b.onclick = () => { punchRec(t).times[b.dataset.now] = nowHM(); save(); renderPunch(); }));
-    $$("#body-punch [data-del]").forEach((b) => (b.onclick = () => { delete punchRec(t).times[b.dataset.del]; save(); renderPunch(); toast("已删除该打卡"); }));
-    const clearBtn = $("#body-punch [data-clear]");
-    if (clearBtn) clearBtn.onclick = () => { if (confirm("清空今日（" + t + "）全部打卡记录？")) { delete D.punch[t]; save(); renderPunch(); renderOverview(); toast("已清空今日打卡"); } };
+    // 事件委托：打卡操作（时间修改/现在打卡/删除/清空）
+    $("#body-punch").onclick = (e) => {
+      const d = e.target;
+      if (d.classList.contains("punch-time")) { punchRec(t).times[d.dataset.pk] = d.value; save(); renderPunch(); }
+      else if (d.dataset.now) { punchRec(t).times[d.dataset.now] = nowHM(); save(); renderPunch(); }
+      else if (d.dataset.del) { delete punchRec(t).times[d.dataset.del]; save(); renderPunch(); toast("已删除该打卡"); }
+      else if (d.dataset.clear) { if (confirm("清空今日（" + t + "）全部打卡记录？")) { delete D.punch[t]; save(); renderPunch(); renderOverview(); toast("已清空今日打卡"); } }
+    };
   }
 
   /* ============ 顶部问候 & 导航 ============ */
@@ -2128,25 +2179,32 @@
     $("#avatarBtn").textContent = D.profile.avatar;
   }
   let curPage = "overview";
+  let _initialized = false; // 标记是否已完成首次全量渲染
+  const _renderMap = {
+    overview: renderOverview, calendar: renderCalendar, weight: renderWeight,
+    nutrition: renderNutrition, fitness: renderFitness, finance: renderFinance,
+    settings: renderSettings, punch: renderPunch, water: renderWater,
+  };
   function navigate(p) {
     curPage = p;
     $$(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.page === p));
     $$(".page").forEach((pg) => pg.classList.toggle("active", pg.id === "page-" + p));
     closeDrawer();
-    if (p === "overview") renderOverview();
-    if (p === "calendar") renderCalendar();
-    if (p === "weight") renderWeight();
-    if (p === "nutrition") renderNutrition();
-    if (p === "fitness") renderFitness();
-    if (p === "finance") renderFinance();
-    if (p === "settings") renderSettings();
-    if (p === "punch") renderPunch();
-    if (p === "water") renderWater();
+    // 只渲染目标页面（首次加载由 renderAll 统一处理）
+    if (_initialized && _renderMap[p]) _renderMap[p]();
   }
   function openDrawer() { $("#sidebar").classList.add("open"); $("#backdrop").classList.add("on"); }
   function closeDrawer() { $("#sidebar").classList.remove("open"); $("#backdrop").classList.remove("on"); }
 
-  function renderAll() { renderOverview(); renderCalendar(); renderWeight(); renderNutrition(); renderFitness(); renderFinance(); renderSettings(); renderPunch(); renderWater(); }
+  // renderAll：首次调用全量渲染（确保各页面数据就绪），后续只刷新当前页
+  function renderAll() {
+    if (!_initialized) {
+      _initialized = true;
+      Object.values(_renderMap).forEach(fn => fn());
+    } else if (_renderMap[curPage]) {
+      _renderMap[curPage]();
+    }
+  }
 
   /* ============ 事件 & 启动 ============ */
   function bind() {
@@ -2158,7 +2216,14 @@
     $("#avatarBtn").onclick = () => navigate("settings");
     $("#themeBtn").onclick = toggleTheme;
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
-    window.addEventListener("resize", () => { if (curPage === "overview") renderOverview(); if (curPage === "nutrition") renderNutrition(); if (curPage === "finance") renderFinance(); if (curPage === "punch") renderPunch(); if (curPage === "calendar") renderCalendar(); if (curPage === "weight") renderWeight(); if (curPage === "water") renderWater(); });
+    // resize 防抖：避免频繁重渲染
+    let _resizeT;
+    window.addEventListener("resize", () => {
+      clearTimeout(_resizeT);
+      _resizeT = setTimeout(() => {
+        if (_renderMap[curPage]) _renderMap[curPage]();
+      }, 150);
+    });
     bindGestures();
   }
 
@@ -2203,10 +2268,16 @@
     bind();
     finApplyClass();
     initRipple();  // 初始化 ripple 波纹效果
+    dailyRollover();  // 每日数据重置（凌晨 3 点生效）
     if (SYNC_URL) syncPull(renderAll);
     else renderAll();
     rolloverFriv();
-    setInterval(() => { if (rolloverFriv()) { if (curPage === "finance") renderFinance(); toast("非必要性开支已清空 · 新的一月 🎈"); } }, 60000);
+    setInterval(() => {
+      // 每分钟检查：月度重置（非必要性开支）
+      if (rolloverFriv()) { if (curPage === "finance") renderFinance(); toast("非必要性开支已清空 · 新的一月 🎈"); }
+      // 每分钟检查：日重置（饮水、待办等）
+      if (dailyRollover()) { renderAll(); }
+    }, 60000);
   }
 
   /* ============ Ripple 波纹效果 ============ */
