@@ -647,10 +647,11 @@ body.fin-locked .chart-box::after { content:"🔒 财务已加密"; position:abs
   letter-spacing: 2px;
   font-family: var(--font-num), "SF Mono", "Cascadia Code", "Consolas", monospace;
   line-height: 1;
-  background: linear-gradient(135deg, var(--text-1), #6366f1);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text-1);
+}
+/* 暗色主题下时钟用靛蓝强调 */
+[data-theme="dark"] .ov-clock-time {
+  color: #a5b4fc;
 }
 .ov-clock-label {
   font-size: 11px;
