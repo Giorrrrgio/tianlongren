@@ -878,8 +878,8 @@
             <div class="meal-group-title"><span style="color:${m.color}">${ic(m.k)}</span>${m.name}</div>
             <div class="meal-kcal">${Math.round(cal)} kcal</div>
           </div>
-          ${list.length ? items : `<div class="empty" style="padding:14px;">还没记录</div>`}
-          <button class="btn btn-ghost w-full mt-2" data-addmeal="${m.k}">+ 添加${m.name}</button>
+          ${list.length ? items : `<div class="empty" style="padding:8px;font-size:12px;">还没记录</div>`}
+          <button class="meal-add-btn" data-addmeal="${m.k}">+ 添加${m.name}</button>
         </div>`;
     }).join("");
 
@@ -923,7 +923,7 @@
 
       <div class="card mt-3">
         <div class="card-head"><div class="card-title">${t.slice(5)} 餐食记录</div><span class="card-sub">可补登 / 修改历史</span></div>
-        ${mealHTML}
+        <div class="meal-grid">${mealHTML}</div>
       </div>
 
       <div class="card mt-3">
