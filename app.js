@@ -2411,7 +2411,14 @@
     const keys = Object.keys(D.punch).sort().reverse().slice(0, 7);
     const hist = keys.length ? keys.map((k) => {
       const rr = D.punch[k]; const w = new Date(k).getDay(); const we = w === 0 || w === 6; const ts = rr.times || {};
-      const parts = PUNCH_STEPS.map((st) => `${st.label}${ts[st.key] || "—"}`).join(" · ");
+      const parts = PUNCH_STEPS.map((st) => {
+        const v = ts[st.key];
+        if (!v) return `${st.label}<span style="color:var(--text-3)">—</span>`;
+        const wm = toMin(st.win), vm = toMin(v);
+        const ok = st.leave ? (vm >= wm) : (vm <= wm);
+        const color = ok ? "var(--green)" : "var(--rose)";
+        return `${st.label}<span style="color:${color};font-weight:600">${v}</span>`;
+      }).join(" · ");
       return `<div class="row"><div class="row-main"><div class="row-title">${k.slice(5)}</div><div class="row-meta">${parts}</div></div><span class="tag ${we ? "tag-amber" : "tag-gray"}">${we ? "周末" : "工作日"}</span></div>`;
     }).join("") : emptyState('📋', '还没有打卡记录', '开始记录你的每日打卡吧', null, null);
     $("#body-punch").innerHTML = `
