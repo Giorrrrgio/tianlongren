@@ -326,26 +326,59 @@ body {
 .m-val .target { font-size: var(--fs-sm); color: var(--ink-3); font-weight: 500; font-family: var(--font-sans); }
 
 /* ========== 餐食记录 ========== */
-.meal-group { border: 1px solid var(--border); border-radius: var(--r-md); padding: 14px; margin-bottom: 12px; background: var(--surface-2); }
-.meal-group-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.meal-group-title { display: flex; align-items: center; gap: 8px; font-weight: 800; }
-.meal-group-title .dot { width: 10px; height: 10px; border-radius: 50%; }
-.meal-kcal { font-size: var(--fs-sm); color: var(--ink-3); font-weight: 700; }
+/* 餐食记录 - 紧凑布局（一屏显示四餐） */
+.meal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.meal-group {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 10px;
+  margin-bottom: 0;
+  background: var(--surface-2);
+}
+.meal-group-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.meal-group-title { display: flex; align-items: center; gap: 6px; font-weight: 800; font-size: 13px; }
+.meal-group-title .dot { width: 8px; height: 8px; border-radius: 50%; }
+.meal-kcal { font-size: 11px; color: var(--ink-3); font-weight: 700; }
 .meal-item {
-  display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface);
-  border-radius: var(--r-sm); margin-bottom: 6px; border: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--surface);
+  border-radius: var(--r-sm); margin-bottom: 4px; border: 1px solid var(--border);
 }
 .meal-item:last-child { margin-bottom: 0; }
 .mi-main { flex: 1; min-width: 0; }
-.mi-name { font-weight: 700; font-size: 13px; }
-.mi-macros { font-size: var(--fs-sm); color: var(--ink-3); margin-top: 2px; }
-.mi-macros span { margin-right: 8px; }
-.mi-cal { font-weight: 800; font-size: 13px; font-family: var(--font-num); }
+.mi-name { font-weight: 700; font-size: 12px; }
+.mi-macros { font-size: 10px; color: var(--ink-3); margin-top: 1px; }
+.mi-macros span { margin-right: 6px; }
+.mi-cal { font-weight: 800; font-size: 12px; font-family: var(--font-num); }
 .mi-del {
-  width: 26px; height: 26px; border-radius: 50%; border: none; background: var(--rose-soft); color: var(--rose-ink);
-  cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center; transition: transform .12s;
+  width: 22px; height: 22px; border-radius: 50%; border: none; background: var(--rose-soft); color: var(--rose-ink);
+  cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; transition: transform .12s;
 }
 .mi-del:hover { transform: scale(1.12); }
+
+/* 紧凑型添加按钮 */
+.meal-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 4px 8px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--accent);
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: all .15s;
+}
+.meal-add-btn:hover {
+  background: var(--surface);
+  border-color: var(--accent);
+}
 .empty { text-align: center; padding: 30px; color: var(--ink-3); font-size: var(--fs-sm); }
 
 /* ========== 饮水 ========== */
@@ -511,6 +544,7 @@ textarea { width: 100%; min-height: 80px; resize: vertical; font-family: inherit
   .asset-legend { grid-template-columns: 1fr; }
   .trend-grid { grid-template-columns: 1fr; }
   .form-2, .form-3 { grid-template-columns: 1fr; }
+  .meal-grid { grid-template-columns: 1fr; } /* 手机端单列显示 */
 }
 
 /* ========== 打卡模块 ========== */
