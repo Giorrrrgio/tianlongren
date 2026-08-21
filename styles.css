@@ -661,14 +661,14 @@ body.fin-locked .chart-box::after { content:"🔒 财务已加密"; position:abs
   margin-top: 4px;
   font-weight: 500;
 }
-/* 秒数淡色处理 — 通过 JS 给秒加 span */
+/* 秒数 — 与时分同款 */
 .ov-clock-time .sec {
-  font-size: 22px;
+  font-size: 36px;
   font-weight: 800;
   font-family: var(--font-num);
-  opacity: 0.5;
+  opacity: 1;
   vertical-align: baseline;
-  margin-left: 1px;
+  margin-left: 0;
 }
 
 /* ========== 总览：今日营养 ========== */
