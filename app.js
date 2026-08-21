@@ -1510,16 +1510,21 @@
 
   function totalTrainDays() { let n = 0; Object.values(D.fitness.calendar).forEach((e) => { if (e && e.parts && e.parts.length && !e.parts.includes("休息")) n++; }); return n; }
   function streakDays() {
-    const ft = D.fitness; const today = new Date(); const t = dstr(today);
-    if (!ft.calendar[t] || !ft.calendar[t].parts.length) return 0;
-    let n = 0; const d = new Date(today);
-    while (true) { const ds = dstr(d); const e = ft.calendar[ds]; if (!e || !e.parts.length) break; if (!e.parts.includes("休息")) n++; d.setDate(d.getDate() - 1); }
+    const ft = D.fitness;
+    // 使用 effectiveToday（凌晨3点前算昨天）
+    const t = effectiveToday();
+    if (!ft.calendar[t] || !ft.calendar[t].parts || !ft.calendar[t].parts.length) return 0;
+    let n = 0; const d = dateFromStr(t);
+    while (true) { const ds = dstr(d); const e = ft.calendar[ds]; if (!e || !e.parts || !e.parts.length) break; if (!e.parts.includes("休息")) n++; d.setDate(d.getDate() - 1); }
     return n;
   }
 
   /* ============ 渲染：日历（健身卡到期 + 训练日历） ============ */
   function renderCalendar() {
-    const ft = D.fitness; const exp = ft.expiry; const expD = dateFromStr(exp); const today = new Date();
+    const ft = D.fitness; const exp = ft.expiry; const expD = dateFromStr(exp);
+    // 使用 effectiveToday（凌晨3点前算昨天）
+    const effToday = effectiveToday();
+    const today = dateFromStr(effToday);
     const diff = Math.ceil((expD - today) / 86400000);
     $("#body-calendar").innerHTML = `
       <div class="demo-badge">本地优先 · 数据存浏览器</div>
