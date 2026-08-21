@@ -720,11 +720,17 @@
     $("#body-overview").innerHTML = `
       <div class="demo-badge">本地优先 · 数据存浏览器</div>
 
-      <!-- 大号日期 -->
+      <!-- 大号日期 + 实时时钟 -->
       <div class="ov-date">
-        <div class="ov-date-d">${new Date().getDate()}</div>
-        <div class="ov-date-m">${new Date().getFullYear()}年${new Date().getMonth() + 1}月 · 周${WK[new Date().getDay()]}</div>
-        <div class="ov-date-hi">${esc(D.profile.name)}，今天也要掌控好</div>
+        <div class="ov-date-left">
+          <div class="ov-date-d">${new Date().getDate()}</div>
+          <div class="ov-date-m">${new Date().getFullYear()}年${new Date().getMonth() + 1}月 · 周${WK[new Date().getDay()]}</div>
+          <div class="ov-date-hi">${esc(D.profile.name)}，今天也要掌控好</div>
+        </div>
+        <div class="ov-clock" id="liveClock">
+          <div class="ov-clock-time">--:--:--</div>
+          <div class="ov-clock-label">实时</div>
+        </div>
       </div>
 
       <!-- 一键直达：置顶 -->
@@ -2417,7 +2423,7 @@
   function setGreeting() {
     const h = new Date().getHours(); const hi = h < 6 ? "凌晨好" : h < 12 ? "早上好" : h < 14 ? "中午好" : h < 18 ? "下午好" : "晚上好";
     $("#greetTitle").textContent = `${hi}，${D.profile.name}`;
-    const d = new Date(); $("#greetSub").innerHTML = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 周${WK[d.getDay()]} · 掌控每一天 <span id="liveClock" style="font-size:13px;font-weight:400;color:var(--text-muted);margin-left:8px;"></span>`;
+    const d = new Date(); $("#greetSub").textContent = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 周${WK[d.getDay()]} · 掌控每一天`;
     $("#avatarBtn").textContent = D.profile.avatar;
   }
   let curPage = "overview";
@@ -2504,17 +2510,19 @@
     setThemeIcon(); renderAll();
   }
 
-  /* ============ 实时时钟 ============ */
+  /* ============ 实时时钟（总览页） ============ */
   let _clockTimer = null;
   function startClock() {
     const tick = () => {
       const el = document.getElementById("liveClock");
       if (!el) return;
+      const timeEl = el.querySelector(".ov-clock-time");
+      if (!timeEl) return;
       const now = new Date();
       const h = String(now.getHours()).padStart(2, "0");
       const m = String(now.getMinutes()).padStart(2, "0");
       const s = String(now.getSeconds()).padStart(2, "0");
-      el.textContent = h + ":" + m + ":" + s;
+      timeEl.innerHTML = h + ":" + m + ':<span class="sec">' + s + "</span>";
     };
     tick();
     _clockTimer = setInterval(tick, 1000);
