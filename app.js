@@ -718,7 +718,6 @@
     const ctype = carbTypeOf(t);
 
     $("#body-overview").innerHTML = `
-      <div class="demo-badge">本地优先 · 数据存浏览器</div>
 
       <!-- 大号日期 + 实时时钟 -->
       <div class="ov-date">
@@ -947,7 +946,6 @@
     }).join("");
 
     $("#body-nutrition").innerHTML = `
-      <div class="demo-badge">本地优先 · 数据存浏览器</div>
 
       <div class="card" style="display:flex;align-items:center;gap:12px;justify-content:space-between;">
         <div style="display:flex;align-items:center;gap:10px;">
@@ -1477,7 +1475,6 @@
     const ft = D.fitness; const t = todayStr();
 
     $("#body-fitness").innerHTML = `
-      <div class="demo-badge">本地优先 · 数据存浏览器</div>
       <div class="mt-3" id="trainSections"></div>
 
       <div class="card mt-3">
@@ -1527,7 +1524,6 @@
     const today = dateFromStr(effToday);
     const diff = Math.ceil((expD - today) / 86400000);
     $("#body-calendar").innerHTML = `
-      <div class="demo-badge">本地优先 · 数据存浏览器</div>
       <div class="card" style="border-left:4px solid var(--amber);">
         <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;">
           <div style="width:56px;height:56px;border-radius:16px;background:var(--amber-soft);display:flex;align-items:center;justify-content:center;font-size:28px;">🎫</div>
@@ -1580,7 +1576,6 @@
       </div>`;
 
     $("#body-weight").innerHTML = `
-      <div class="demo-badge">本地优先 · 数据存浏览器</div>
 
       <!-- 看板1：身体三参数（最新） -->
       <div class="card">
@@ -1700,7 +1695,6 @@
       : `<div class="card-sub">今天还没记录饮品</div>`;
     const drinkBtns = (D.nutrition.drinks || []).map((d) => `<button class="drink" data-drink="${d.id}">${drinkIcon(d.name)} ${esc(d.name)} +${d.water}ml</button>`).join("");
     $("#body-water").innerHTML = `
-      <div class="demo-badge">本地优先 · 数据存浏览器</div>
       <div class="card">
         <div class="card-head">
           <div class="card-title">今日饮水 / 饮品</div>
@@ -1822,7 +1816,6 @@
     finApplyClass();
     $("#body-finance").innerHTML = `
       ${finLockBar()}
-      <div class="demo-badge">本地优先 · 数据存浏览器</div>
 
       <!-- 单一 hero：净资产 + 4 个核心指标 + 同比 -->
       <div class="hero-dark">
@@ -2310,6 +2303,12 @@
         <div class="card-sub mt-2">当前状态：<b>${FIN.on ? "🔒 已加密" : "🔓 未加密"}</b></div>
       </div>
 
+      <div class="card mt-3" id="settingsPwaCard">
+        <div class="card-head"><div class="card-title">📱 安装到桌面</div></div>
+        <p class="card-sub mb-2">将天龙人像 APP 一样固定到桌面/任务栏，离线也能用。点击下方按钮安装。</p>
+        <div id="pwaInstallArea"><span class="card-sub">检测中...</span></div>
+      </div>
+
       <div class="card mt-3">
         <div class="card-head"><div class="card-title">关于</div></div>
         <p class="card-sub">天龙人 · 个人工作台 v4.1<br>整合 营养师 / 天龙人 / 小金库 三个小样，现代卡片风格。本地优先：数据只存在你当前浏览器，分享链接不会带出你的任何记录。</p>
@@ -2355,6 +2354,8 @@
     if (syncUrlInput) syncUrlInput.onchange = () => { SYNC_URL = syncUrlInput.value.trim(); try { localStorage.setItem("tlr_sync_url", SYNC_URL); } catch (e) {} const s = $("#syncStatus"); if (s) s.textContent = SYNC_URL ? "已配置同步地址（自动）" : "未配置 · 仅本地 + 手动导出导入"; toast(SYNC_URL ? "同步地址已保存" : "已关闭自动同步"); if (SYNC_URL) syncPull(renderAll); };
     const syncNowBtn = $("#syncNow");
     if (syncNowBtn) syncNowBtn.onclick = () => { if (!SYNC_URL) { toast("请先填写同步地址", "warn"); return; } syncPull(() => { syncPush(); renderAll(); }); };
+    // PWA 安装区域初始化
+    initPWAInstallArea();
   }
 
   /* ============ 渲染：打卡（自填时间 + 提醒） ============ */
@@ -2414,7 +2415,6 @@
       return `<div class="row"><div class="row-main"><div class="row-title">${k.slice(5)}</div><div class="row-meta">${parts}</div></div><span class="tag ${we ? "tag-amber" : "tag-gray"}">${we ? "周末" : "工作日"}</span></div>`;
     }).join("") : emptyState('📋', '还没有打卡记录', '开始记录你的每日打卡吧', null, null);
     $("#body-punch").innerHTML = `
-      <div class="demo-badge">本地优先 · 数据存浏览器</div>
       <div class="card">
         <div class="card-head"><div class="card-title">上下班打卡</div><span class="card-sub">${t} 周${WK[wd]}${weekend ? " · 周末" : ""}</span></div>
         <div class="punch-banner ${weekend ? "we" : ""}">${banner}</div>
@@ -2670,38 +2670,34 @@
     window.addEventListener('appinstalled', () => {
       toast('✅ 天龙人已安装为应用');
       deferredPrompt = null;
-      hidePWAInstallBanner();
+      refreshPWAInstallArea();
     });
   }
 
-  function showPWAInstallBanner() {
-    const existing = $('#pwaInstallBar');
-    if (existing) { existing.style.display = 'flex'; return; }
-
-    const bar = document.createElement('div');
-    bar.id = 'pwaInstallBar';
-    bar.className = 'pwa-install-bar';
-    bar.innerHTML = `
-      <span class="pwa-install-text">📱 安装天龙人到桌面，像 APP 一样使用</span>
-      <button class="pwa-install-btn" id="pwaInstallBtn">安装</button>
-    `;
-    const content = $('.content');
-    if (content) content.insertBefore(bar, content.firstChild);
-
-    $('#pwaInstallBtn').onclick = async () => {
-      if (!deferredPrompt) return;
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') toast('🎉 已安装到桌面！');
-      deferredPrompt = null;
-      hidePWAInstallBanner();
-    };
+  /* PWA 安装区域（设置页内） */
+  function initPWAInstallArea() { refreshPWAInstallArea(); }
+  function refreshPWAInstallArea() {
+    const area = $('#pwaInstallArea');
+    if (!area) return;
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+      area.innerHTML = '<span class="tag tag-green">✅ 已安装为应用</span>';
+    } else if (deferredPrompt) {
+      area.innerHTML = `<button class="btn btn-primary" id="pwaInstallBtn">📱 安装到桌面</button>`;
+      $('#pwaInstallBtn').onclick = async () => {
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') toast('🎉 已安装到桌面！');
+        deferredPrompt = null;
+        refreshPWAInstallArea();
+      };
+    } else {
+      area.innerHTML = '<span class="card-sub" style="color:var(--text-3)">当前浏览器不支持安装，或已安装/已dismiss</span>';
+    }
   }
-
-  function hidePWAInstallBanner() {
-    const bar = $('#pwaInstallBar');
-    if (bar) bar.style.display = 'none';
-  }
+  // 兼容旧调用
+  function showPWAInstallBanner() { refreshPWAInstallArea(); }
+  function hidePWAInstallBanner() { refreshPWAInstallArea(); }
 
   /* ============ visibilitychange 自动刷新 ============ */
   function initVisibilityRefresh() {
