@@ -629,8 +629,8 @@ body.fin-locked .chart-box::after { content:"🔒 财务已加密"; position:abs
   background: linear-gradient(135deg, var(--glass-2), transparent);
   border: 1px solid var(--glass-border);
   border-radius: var(--r-md);
-  padding: 12px 24px;
-  min-width: 140px;
+  padding: 10px 18px;
+  min-width: auto;
   position: relative;
   overflow: hidden;
 }
@@ -652,14 +652,6 @@ body.fin-locked .chart-box::after { content:"🔒 财务已加密"; position:abs
 /* 暗色主题下时钟用靛蓝强调 */
 [data-theme="dark"] .ov-clock-time {
   color: #a5b4fc;
-}
-.ov-clock-label {
-  font-size: 11px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 3px;
-  margin-top: 4px;
-  font-weight: 500;
 }
 /* 秒数 — 与时分同款 */
 .ov-clock-time .sec {
