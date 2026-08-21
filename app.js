@@ -837,6 +837,18 @@
     /* 渲染总览的账户余额卡 + 资产构成条（与财务页共用 renderAssets） */
     renderAssets();
     animateNumbers($("#body-overview"));
+    // 刷新实时时钟（innerHTML 重建 DOM 后需要重新填充）
+    if (typeof startClock === "function" && document.getElementById("liveClock")) {
+      const el = document.getElementById("liveClock");
+      const timeEl = el && el.querySelector(".ov-clock-time");
+      if (timeEl) {
+        const now = new Date();
+        const h = String(now.getHours()).padStart(2, "0");
+        const m = String(now.getMinutes()).padStart(2, "0");
+        const s = String(now.getSeconds()).padStart(2, "0");
+        timeEl.innerHTML = h + ":" + m + ':<span class="sec">' + s + "</span>";
+      }
+    }
   }
   function quickWeightModal() {
     openModal("记录体重", `
