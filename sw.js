@@ -13,8 +13,8 @@ const STATIC_ASSETS = [
   '/tianlongren/app.js',
   '/tianlongren/seed.js',
   '/tianlongren/manifest.json',
-  '/tianlongren/icon-192.png',
-  '/tianlongren/icon-512.png',
+  '/tianlongren/icon-192-v2.png',
+  '/tianlongren/icon-512-v2.png',
 ];
 
 // 安装：预缓存静态资源
