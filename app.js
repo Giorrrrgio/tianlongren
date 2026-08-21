@@ -745,13 +745,13 @@
         </div>
       </div>
 
-      <!-- 体重看板（提前到营养之前） -->
-      <div class="card mt-3" data-nav="weight" style="cursor:pointer;">
-        <div class="card-head"><div class="card-title">⚖️ 身体指标</div><span class="card-sub">${lw ? "更新于 " + lw.date.slice(5) : "还没有记录"}</span></div>
-        <div class="ov-body-row">
-          <div class="stat"><div class="stat-label">体重</div><div class="stat-value">${lw ? lw.weight : "--"}<span class="unit">kg</span></div><div class="stat-foot">${ud(lw && lw.weight, wPrev && wPrev.weight)}</div></div>
-          <div class="stat"><div class="stat-label">脂肪量</div><div class="stat-value">${lw && fatMass(lw) != null ? fatMass(lw) : "--"}<span class="unit">kg</span></div><div class="stat-foot">体脂 ${lw ? lw.fatRate : "--"}% · ${ud(lw && fatMass(lw), wPrev && fatMass(wPrev))}</div></div>
-          <div class="stat"><div class="stat-label">肌肉量</div><div class="stat-value">${lw && musMass(lw) != null ? musMass(lw) : "--"}<span class="unit">kg</span></div><div class="stat-foot">肌肉 ${lw ? lw.muscleRate : "--"}% · ${ud(lw && musMass(lw), wPrev && musMass(wPrev))}</div></div>
+      <!-- 今日待办 -->
+      <div class="card mt-3">
+        <div class="card-head"><div class="card-title">📋 今日待办</div><span class="card-sub" id="ovTodoCount"></span></div>
+        <div id="ovTodo"></div>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <input id="todoInput" placeholder="添加一条待办…" style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid var(--border);">
+          <button class="btn btn-sm btn-primary" id="todoAdd">添加</button>
         </div>
       </div>
 
@@ -778,13 +778,13 @@
         <div class="bar mt-2"><div class="bar-fill" style="width:${Math.round(clamp(water / 2000, 0, 1) * 100)}%;background:linear-gradient(90deg,#38bdf8,#2563eb);"></div></div>
       </div>
 
-      <!-- 今日待办 -->
-      <div class="card mt-3">
-        <div class="card-head"><div class="card-title">📋 今日待办</div><span class="card-sub" id="ovTodoCount"></span></div>
-        <div id="ovTodo"></div>
-        <div style="display:flex;gap:8px;margin-top:10px;">
-          <input id="todoInput" placeholder="添加一条待办…" style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid var(--border);">
-          <button class="btn btn-sm btn-primary" id="todoAdd">添加</button>
+      <!-- 身体指标 -->
+      <div class="card mt-3" data-nav="weight" style="cursor:pointer;">
+        <div class="card-head"><div class="card-title">⚖️ 身体指标</div><span class="card-sub">${lw ? "更新于 " + lw.date.slice(5) : "还没有记录"}</span></div>
+        <div class="ov-body-row">
+          <div class="stat"><div class="stat-label">体重</div><div class="stat-value">${lw ? lw.weight : "--"}<span class="unit">kg</span></div><div class="stat-foot">${ud(lw && lw.weight, wPrev && wPrev.weight)}</div></div>
+          <div class="stat"><div class="stat-label">脂肪量</div><div class="stat-value">${lw && fatMass(lw) != null ? fatMass(lw) : "--"}<span class="unit">kg</span></div><div class="stat-foot">体脂 ${lw ? lw.fatRate : "--"}% · ${ud(lw && fatMass(lw), wPrev && fatMass(wPrev))}</div></div>
+          <div class="stat"><div class="stat-label">肌肉量</div><div class="stat-value">${lw && musMass(lw) != null ? musMass(lw) : "--"}<span class="unit">kg</span></div><div class="stat-foot">肌肉 ${lw ? lw.muscleRate : "--"}% · ${ud(lw && musMass(lw), wPrev && musMass(wPrev))}</div></div>
         </div>
       </div>
 
