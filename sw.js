@@ -1,9 +1,9 @@
 /* 天龙人 Service Worker
  * 缓存策略：Cache First（离线优先，后台静默更新）
- * 版本：tlr-v3
+ * 版本：tlr-v4
  */
 
-const CACHE_NAME = 'tlr-v3';
+const CACHE_NAME = 'tlr-v4';
 
 // 需要缓存的静态资源
 const STATIC_ASSETS = [
