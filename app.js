@@ -1190,6 +1190,10 @@
         if (cand && !/分析|如下|营养|成分|根据|以下|包含|估算|计算|热量|能量|碳水|蛋白质|脂肪|胆固醇|嘌呤|提供|食材|calories|protein|fat|carbs/i.test(cand) && cand.length >= 2 && cand.length <= 18) name = cand;
       }
     }
+    // 最终安全网：名称不能是营养标签或纯标签+数字
+    if (/^(?:总\s*热量|热量|能量|碳水(?:化合物)?|蛋白质|脂肪|胆固醇|嘌呤|calories?|protein|fat|carbs?|cholesterol|purine)[\s：(（[\d]+$/i.test(name)) {
+      name = "";
+    }
     return { name, cal, c, p, f, ch, pu };
   }
 
@@ -1259,7 +1263,8 @@
 
     // ===== 核心拆分逻辑 =====
     // 从文本中提取"食物行"——去掉营养标签行后的剩余部分
-    const nutLinePat = /^(?:总\s*热量|热量|能量|碳水|蛋白质|脂肪|胆固醇|嘌呤|calories|protein|fat|carbs|cholesterol|purine)[\s:：\d\.\s]+$/im;
+    // 支持格式：总热量(kcal)：432、碳水(g)：6.24、蛋白质(g)：85.44 等
+    const nutLinePat = /^(?:总\s*热量|热量|能量|碳水(?:化合物)?|蛋白质|脂肪|胆固醇|嘌呤|calories?|protein|fat|carbs?|cholesterol|purine)[\s:(：()\[\]\w\d\.,\-\u4e00-\u9fff]+$/im;
     const lines = t.split(/[\n;；]+/).map((l) => l.trim()).filter(Boolean);
     const foodLines = lines.filter((l) => !nutLinePat.test(l));
     let foodText = foodLines.join(" ");
@@ -1447,8 +1452,16 @@
         $("#mPu").value  = hasSummary ? Math.round(meals.reduce((s, m) => s + (+m.pu || 0), 0)) : "";
         toast(`已识别 ${meals.length} 道菜并合并填充`);
       } else {
-        // 单菜品：原有逻辑
-        const r = meals[0] || parseNutritionText(txt);
+        // 单菜品：优先使用 parseMultiMealText 拆分结果，若营养值为空则用 parseNutritionText 补充
+        let r = meals[0] || null;
+        if (r && !r.cal && !r.p) {
+          // 拆分到了名称但没营养值（可能是单菜品+营养标签被误判），用 parseNutritionText 补充营养
+          const supplement = parseNutritionText(txt);
+          if (supplement.cal || supplement.p) {
+            r = { name: r.name, cal: supplement.cal || r.cal, c: supplement.c || r.c, p: supplement.p || r.p, f: supplement.f || r.f, ch: supplement.ch || r.ch, pu: supplement.pu || r.pu };
+          }
+        }
+        if (!r) r = parseNutritionText(txt);
         $("#mName").value = r.name;
         $("#mCal").value = r.cal;
         $("#mC").value = r.c;
