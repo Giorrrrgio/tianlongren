@@ -1200,8 +1200,18 @@
   /* ============ 多菜品清单解析（逗号/顿号分隔的多个食物） ============ */
   function parseMultiMealText(txt) {
     const raw = (txt || "").toString();
+
+    // ===== 阶段0：早期行过滤（在归一化之前，保留换行结构）=====
+    // 营养标签行模式：支持 总热量(kcal)：432、蛋白质(g)：85.44、胆固醇(mg):0 等格式
+    const NUT_LINE_RE = /^(?:总\s*热量|热量|能量|碳水(?:化合物)?|蛋白质|脂肪|胆固醇|嘌呤|说明)[\s:(：（()\[\]\w\d\.,\-\u4e00-\u9fff]*$/im;
+    const rawLines = raw.split(/[\n\r;；]+/).map((l) => l.trim()).filter(Boolean);
+    const foodRawLines = rawLines.filter((l) => !NUT_LINE_RE.test(l));
+    let foodTextRaw = foodRawLines.join(" ");
+    // 去掉末尾"说明："及之后的备注
+    foodTextRaw = foodTextRaw.replace(/\s*说明[：:]\s*[\s\S]*$/i, "").trim();
+
     let t = raw;
-    // 归一化——但保留（）内的内容用于名称提取，只替换外围括号为空格
+    // 归一化——用于营养值提取（numFor），需要单行文本
     t = t.replace(/\*\*/g, " ")
          .replace(/[【】\[\]〈〉「」『』{}]/g, " ")
          .replace(/[|｜]/g, " ")
@@ -1239,6 +1249,18 @@
       while ((m = labelRe.exec(t)) !== null) {
         const after = t.slice(m.index + m[0].length);
         const head = after.slice(0, 60);
+
+        // 【关键】上下文守卫：如果匹配到的标签是食物名称的一部分（如"蛋白粉"中的"蛋白"），跳过
+        // 营养标签后面通常紧跟 ( : ： 数字 或空白，而食物名中的子串后面紧跟中文/英文字符
+        const nextCh = after.trim()[0] || "";
+        if (/[\u4e00-\u9fffA-Za-z]/.test(nextCh) && !/[(:：\d\s]/.test(nextCh)) {
+          // 标签后紧接中文/英文且不是括号/冒号/数字 → 可能是食物名子串，跳过
+          // 特例："蛋白质" 后面如果跟 (g) 是合法的，但 "蛋白" 后面跟 "粉" 不是
+          const matched = m[0];
+          // 如果匹配的是简称（如"蛋白"而非"蛋白质"）且后面是中文 → 跳过
+          if (matched.length <= 3 && /[\u4e00-\u9fff]/.test(nextCh)) continue;
+        }
+
         if (unitPat) {
           const um = head.match(new RegExp("(\\d+(?:\\.\\d+)?)\\s*" + unitPat, "i"));
           if (um) return parseFloat(um[1]);
@@ -1262,15 +1284,8 @@
     const sumPu  = numFor("(?:嘌呤|purine)", M_UNIT);
 
     // ===== 核心拆分逻辑 =====
-    // 从文本中提取"食物行"——去掉营养标签行后的剩余部分
-    // 支持格式：总热量(kcal)：432、碳水(g)：6.24、蛋白质(g)：85.44 等
-    const nutLinePat = /^(?:总\s*热量|热量|能量|碳水(?:化合物)?|蛋白质|脂肪|胆固醇|嘌呤|calories?|protein|fat|carbs?|cholesterol|purine)[\s:(：()\[\]\w\d\.,\-\u4e00-\u9fff]+$/im;
-    const lines = t.split(/[\n;；]+/).map((l) => l.trim()).filter(Boolean);
-    const foodLines = lines.filter((l) => !nutLinePat.test(l));
-    let foodText = foodLines.join(" ");
-
-    // 二次清理：去掉末尾的"说明："及之后的备注文字
-    foodText = foodText.replace(/\s*说明[：:]\s*[\s\S]*$/i, "").trim();
+    // foodTextRaw 已在阶段0通过原始文本行过滤得到（营养标签行已移除）
+    let foodText = foodTextRaw;
 
     if (!foodText.trim()) {
       const single = parseNutritionText(raw);
@@ -1287,16 +1302,24 @@
     // ---- 模式 1（主模式）：中文名称 + 数字 + 单位 ----
     // 匹配：丝瓜20g、梭子蟹1.5只、芝士牛乳奶油面包×2个、泰奶冰面包1个、清蒸蛏子12只
     // 名称：2字以上中文（或英文），允许包含括号注释如（大）（可食120g）
-    const PAT_NAME_FIRST = /([\u4e00-\u9fff]{2,}(?:[（\(][\u4e00-\u9fff\d\wg克只个颗片块碗枚份口两\s]{0,20}[）\)])?)[\s]*([×x]?\s*(\d+(?:\.\d+)?)\s*(两|口)?\s*)?(?:\s*(\d+(?:\.\d+)?)\s*(" + DISH_UNIT + "))/gi;
+    //
+    // 捕获组说明：
+    //   [1] 名称（含可选括号注释）
+    //   [2] ×N 前缀乘数部分（整体，可选）
+    //   [3] ×N 中的数字
+    //   [4] ×N 中的小单位（两/口，可选）
+    //   [5] 主数量数字
+    //   [6] 主单位
+    const PAT_NAME_FIRST = /([\u4e00-\u9fff]{2,}(?:[（\(][\u4e00-\u9fff\d\wg克只个颗片块碗枚份口两\s]{0,20}[）\)])?)(?:\s*)([×x]?\s*(\d+(?:\.\d+)?)\s*(两|口)?\s*)?(?:\s*(\d+(?:\.\d+)?)\s*(" + DISH_UNIT + "))/gi;
 
     let m1;
     while ((m1 = PAT_NAME_FIRST.exec(foodText)) !== null) {
       let rawName = (m1[1] || "").trim();
-      const multiplier = m1[3] || "";   // ×N 前缀乘数
-      const prefixQty = m1[4] || "";     // ×N 后的数字
-      const prefixUnit = m1[5] || "";    // 两/口 等前缀小单位
-      const qty = m1[6];
-      const unit = m1[7];
+      const multiplierSection = m1[2] || ""; // ×N 整体部分
+      const prefixQty = m1[3] || "";         // ×N 数字
+      const prefixUnit = m1[4] || "";        // 两/口
+      const qty = m1[5];                     // 主数量
+      const unit = m1[6];                    // 主单位
 
       // 清理名称：去掉尾部括号内容中的纯修饰词，保留有意义的
       rawName = rawName.replace(/[（\(][\s]*(?:大|中|小|可食\d*[g克]?)\s*[）\)]/gi, (bracketContent) => {
@@ -1313,7 +1336,11 @@
 
       // 计算最终数量
       let finalQty = parseFloat(cnToArabic(qty)) || 0;
-      if (multiplier) finalQty *= parseFloat(cnToArabic(multiplier)) || 1;
+      // 解析 ×N 前缀乘数（如 "×2" → 乘以 2）
+      if (multiplierSection) {
+        const multMatch = multiplierSection.match(/[×x]\s*(\d+(?:\.\d+)?)/);
+        if (multMatch) finalQty *= parseFloat(cnToArabic(multMatch[1])) || 1;
+      }
       if (prefixQty) finalQty += parseFloat(cnToArabic(prefixQty)) || 0;
 
       const displayUnit = unit || prefixUnit || "份";
