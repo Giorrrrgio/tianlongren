@@ -1197,10 +1197,9 @@
   function parseMultiMealText(txt) {
     const raw = (txt || "").toString();
     let t = raw;
-    // 归一化（与 parseNutritionText 一致）
+    // 归一化——但保留（）内的内容用于名称提取，只替换外围括号为空格
     t = t.replace(/\*\*/g, " ")
          .replace(/[【】\[\]〈〉「」『』{}]/g, " ")
-         .replace(/[（）()]/g, " ")
          .replace(/[|｜]/g, " ")
          .replace(/[：:＝=]/g, ":")
          .replace(/，/g, ",")
@@ -1263,65 +1262,103 @@
     const nutLinePat = /^(?:总\s*热量|热量|能量|碳水|蛋白质|脂肪|胆固醇|嘌呤|calories|protein|fat|carbs|cholesterol|purine)[\s:：\d\.\s]+$/im;
     const lines = t.split(/[\n;；]+/).map((l) => l.trim()).filter(Boolean);
     const foodLines = lines.filter((l) => !nutLinePat.test(l));
-    const foodText = foodLines.join(" ");
+    let foodText = foodLines.join(" ");
+
+    // 二次清理：去掉末尾的"说明："及之后的备注文字
+    foodText = foodText.replace(/\s*说明[：:]\s*[\s\S]*$/i, "").trim();
 
     if (!foodText.trim()) {
-      // 没有食物文本，回退到单菜品解析
       const single = parseNutritionText(raw);
       return [single].filter((x) => x.name);
     }
 
-    // 多菜品正则拆分
-    // 支持格式：
-    //   "200克姜母鸭"     — 数字+克+名称
-    //   "150g小炒黄牛肉"  — 数字+g+名称
-    //   "三片西瓜"       — 中文数词+量词+名称
-    //   "50克花生"       — 数字+克+名称
-    const DISH_UNIT = "(?:g|克|个|颗|片|块|碗|盒|根|条|只|枚|份|串|把|杯|袋|罐|瓶|勺|张|瓣|粒|尾|笼|碟|盘)";
+    // ===== 全量单位列表 =====
+    const DISH_UNIT = "(?:g|克|个|颗|片|块|碗|盒|根|条|只|枚|份|串|把|杯|袋|罐|瓶|勺|张|瓣|粒|尾|笼|碟|盘|口|两|碗)";
     const CNUM = "(?:\\d+(?:\\.\\d+)?|[零一二两三四五六七八九十半]+)";
 
-    // 模式 A：数字+单位+中文名称（如 "200克姜母鸭"、"50g花生"）
-    const PAT_A = new RegExp("(" + CNUM + ")\\s*(" + DISH_UNIT + ")\\s*([\\u4e00-\\u9fff]{2,}(?:[\\u4e00-\\u9fff\\(\\)\\[\\]·\\-]{0,15}?)?)", "gi");
-
-    // 模式 B：中文名称+数字+单位（如 "姜母鸭200克"、"蛋白粉30g"）— 较少见但支持
-    const PAT_B = /([\u4e00-\u9fff]{2,}|[A-Za-z]{2,})[\s\(（\[]{0,4}(\d+(?:\.\d+)?)\s*(克|g)\b/gi;
-
     const meals = [];
-    const seenNames = new Set(); // 去重
+    const seenNames = new Set();
 
-    // 先尝试模式 A（最常见）
-    let matchA;
-    while ((matchA = PAT_A.exec(foodText)) !== null) {
-      const qtyStr = cnToArabic(matchA[1]);
-      const unit = matchA[2];
-      let name = (matchA[3] || "").trim();
-      if (!name) continue;
-      // 清理名称中的尾随标点
-      name = name.replace(/[，,。．！!？?\s]+$/, "").trim();
-      if (name.length < 2) continue;
+    // ---- 模式 1（主模式）：中文名称 + 数字 + 单位 ----
+    // 匹配：丝瓜20g、梭子蟹1.5只、芝士牛乳奶油面包×2个、泰奶冰面包1个、清蒸蛏子12只
+    // 名称：2字以上中文（或英文），允许包含括号注释如（大）（可食120g）
+    const PAT_NAME_FIRST = /([\u4e00-\u9fff]{2,}(?:[（\(][\u4e00-\u9fff\d\wg克只个颗片块碗枚份口两\s]{0,20}[）\)])?)[\s]*([×x]?\s*(\d+(?:\.\d+)?)\s*(两|口)?\s*)?(?:\s*(\d+(?:\.\d+)?)\s*(" + DISH_UNIT + "))/gi;
+
+    let m1;
+    while ((m1 = PAT_NAME_FIRST.exec(foodText)) !== null) {
+      let rawName = (m1[1] || "").trim();
+      const multiplier = m1[3] || "";   // ×N 前缀乘数
+      const prefixQty = m1[4] || "";     // ×N 后的数字
+      const prefixUnit = m1[5] || "";    // 两/口 等前缀小单位
+      const qty = m1[6];
+      const unit = m1[7];
+
+      // 清理名称：去掉尾部括号内容中的纯修饰词，保留有意义的
+      rawName = rawName.replace(/[（\(][\s]*(?:大|中|小|可食\d*[g克]?)\s*[）\)]/gi, (bracketContent) => {
+        // 如果括号里是"可食XXg"这种有用信息，保留括号
+        if (/可食/.test(bracketContent)) return bracketContent;
+        return ""; // 否则去掉括号
+      }).trim();
+      // 再清理一次残留空括号
+      rawName = rawName.replace(/[（()\）]/g, "").trim();
+
+      if (rawName.length < 2) continue;
       // 排除营养标签误匹配
-      if (/^(?:总热量|热量|能量|碳水(?:化合物)?|蛋白质|脂肪|胆固醇|嘌呤)$/i.test(name)) continue;
-      // 去重
-      const key = name + qtyStr + unit;
+      if (/^(?:总热量|热量|能量|碳水(?:化合物)?|蛋白质|脂肪|胆固醇|嘌呤|说明)$/i.test(rawName)) continue;
+
+      // 计算最终数量
+      let finalQty = parseFloat(cnToArabic(qty)) || 0;
+      if (multiplier) finalQty *= parseFloat(cnToArabic(multiplier)) || 1;
+      if (prefixQty) finalQty += parseFloat(cnToArabic(prefixQty)) || 0;
+
+      const displayUnit = unit || prefixUnit || "份";
+      const key = rawName + finalQty + displayUnit;
       if (seenNames.has(key)) continue;
       seenNames.add(key);
 
       meals.push({
-        name: name + "(" + qtyStr + unit + ")",
+        name: rawName + "(" + finalQty + displayUnit + ")",
         cal: "", c: "", p: "", f: "", ch: "", pu: "",
-        _rawName: name,
-        _qty: parseFloat(qtyStr) || 0,
-        _unit: unit,
+        _rawName: rawName,
+        _qty: finalQty,
+        _unit: displayUnit,
       });
     }
 
-    // 如果模式 A 没有匹配到，尝试模式 B
+    // ---- 模式 2（辅模式）：数字 + 单位 + 中文名称 ----
+    // 匹配：200克姜母鸭、50g花生、三片西瓜
     if (meals.length === 0) {
-      let matchB;
-      while ((matchB = PAT_B.exec(foodText)) !== null) {
-        const dishName = matchB[1];
-        const qtyStr = matchB[2];
-        const unit = matchB[3];
+      const PAT_QTY_FIRST = new RegExp("(" + CNUM + ")\\s*(" + DISH_UNIT + ")\\s*([\\u4e00-\\u9fff]{2,}(?:[\\u4e00-\\u9fff\\(\\)\\[\\]·\\-]{0,15}?)?)", "gi");
+      let m2;
+      while ((m2 = PAT_QTY_FIRST.exec(foodText)) !== null) {
+        const qtyStr = cnToArabic(m2[1]);
+        const unit = m2[2];
+        let name = (m2[3] || "").trim();
+        name = name.replace(/[，,。．！!？?\s]+$/, "").trim();
+        if (name.length < 2) continue;
+        if (/^(?:总热量|热量|能量|碳水(?:化合物)?|蛋白质|脂肪|胆固醇|嘌呤)$/i.test(name)) continue;
+        const key = name + qtyStr + unit;
+        if (seenNames.has(key)) continue;
+        seenNames.add(key);
+
+        meals.push({
+          name: name + "(" + qtyStr + unit + ")",
+          cal: "", c: "", p: "", f: "", ch: "", pu: "",
+          _rawName: name,
+          _qty: parseFloat(qtyStr) || 0,
+          _unit: unit,
+        });
+      }
+    }
+
+    // ---- 模式 3（兜底）：仅 名称+克/g 的简单格式 ----
+    if (meals.length === 0) {
+      const PAT_SIMPLE = /([\u4e00-\u9fff]{2,}|[A-Za-z]{2,})[\s\(（\[]{0,4}(\d+(?:\.\d+)?)\s*(克|g)\b/gi;
+      let m3;
+      while ((m3 = PAT_SIMPLE.exec(foodText)) !== null) {
+        const dishName = m3[1];
+        const qtyStr = m3[2];
+        const unit = m3[3];
         if (/^(?:总热量|热量|能量|碳水(?:化合物)?|蛋白质|脂肪|胆固醇|嘌呤)$/i.test(dishName)) continue;
         const key = dishName + qtyStr + unit;
         if (seenNames.has(key)) continue;
@@ -2504,10 +2541,17 @@
     $("#menuBtn").onclick = openDrawer;
     $("#backdrop").onclick = closeDrawer;
     $("#modalClose").onclick = closeModal;
-    $("#overlay").onclick = (e) => { if (e.target === $("#overlay")) closeModal(); };
+    $("#overlay").onclick = (e) => {
+      // 只有点击 overlay 自身（非子元素）才关闭；在输入框/文本域中选择文字时不误触
+      if (e.target === $("#overlay") && !e.target.closest("input, textarea, select")) closeModal();
+    };
     $("#avatarBtn").onclick = () => navigate("settings");
     $("#themeBtn").onclick = toggleTheme;
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
+    document.addEventListener("keydown", (e) => {
+      // Escape 关闭模态框，但如果用户正在输入框/文本域中编辑则不触发
+      const tag = (e.target || {}).tagName || "";
+      if (e.key === "Escape" && !["INPUT", "TEXTAREA", "SELECT"].includes(tag)) closeModal();
+    });
     // resize 防抖：避免频繁重渲染
     let _resizeT;
     window.addEventListener("resize", () => {
