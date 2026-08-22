@@ -1203,7 +1203,7 @@
 
     // ===== 阶段0：早期行过滤（在归一化之前，保留换行结构）=====
     // 营养标签行模式：支持 总热量(kcal)：432、蛋白质(g)：85.44、胆固醇(mg):0 等格式
-    const NUT_LINE_RE = /^(?:总\s*热量|热量|能量|碳水(?:化合物)?|蛋白质|脂肪|胆固醇|嘌呤|说明)[\s:(：（()\[\]\w\d\.,\-\u4e00-\u9fff]*$/im;
+    const NUT_LINE_RE = /^(?:总\s*热量|热量|能量|碳水(?:化合物)?|蛋白质|脂肪|胆固醇|嘌呤|说明)[\s:：(（()\[\]\w\d\.,\-\u4e00-\u9fff：：]+$/im;
     const rawLines = raw.split(/[\n\r;；]+/).map((l) => l.trim()).filter(Boolean);
     const foodRawLines = rawLines.filter((l) => !NUT_LINE_RE.test(l));
     let foodTextRaw = foodRawLines.join(" ");
@@ -1286,79 +1286,112 @@
     // ===== 核心拆分逻辑 =====
     // foodTextRaw 已在阶段0通过原始文本行过滤得到（营养标签行已移除）
     let foodText = foodTextRaw;
+    // 预处理：将 + 号和中文逗号统一为英文逗号（用于"莲藕汤两口+一口莲藕40g"等格式）
+    foodText = foodText.replace(/\+/g, ",").replace(/[，、]/g, ",");
 
     if (!foodText.trim()) {
       const single = parseNutritionText(raw);
       return [single].filter((x) => x.name);
     }
 
-    // ===== 全量单位列表 =====
-    const DISH_UNIT = "(?:g|克|个|颗|片|块|碗|盒|根|条|只|枚|份|串|把|杯|袋|罐|瓶|勺|张|瓣|粒|尾|笼|碟|盘|口|两|碗)";
+    // ===== 单位定义 =====
+    const REAL_UNIT = "(?:g|克|个|颗|片|块|碗|盒|根|条|只|枚|份|串|把|杯|袋|罐|瓶|勺|张|瓣|粒|尾|笼|碟|盘|两)";
+    const VIRT_UNIT = "(?:口|碗|杯|勺|匙)";
     const CNUM = "(?:\\d+(?:\\.\\d+)?|[零一二两三四五六七八九十半]+)";
+
+    // 数量词前缀：从名称中剥离（"一口莲藕" → "莲藕"，"半碗饭" → "饭"）
+    const QTY_PREFIX_RE = /^(?:一?口|半?碗|一?杯|一?勺|少量|少许|一?小?撮|一?点|一?筷|一?手|一?捏|一?片|一?块|一?根|一?只|一?个|一?颗|一?粒|一?瓣|一?张|一?份|一?把|一?串|一?袋|一?罐|一?瓶|一?盒|一?盘|一?碟|一?笼|一?尾|一?条|一两|半两)/;
+    // 尾部数字清理（虚拟单位匹配后："莲藕汤两" → "莲藕汤"）
+    const TRAIL_NUM_RE = /[一二两三四五六七八九十半\d\.]+$/;
 
     const meals = [];
     const seenNames = new Set();
 
-    // ---- 模式 1（主模式）：中文名称 + 数字 + 单位 ----
-    // 匹配：丝瓜20g、梭子蟹1.5只、芝士牛乳奶油面包×2个、泰奶冰面包1个、清蒸蛏子12只
-    // 名称：2字以上中文（或英文），允许包含括号注释如（大）（可食120g）
-    //
-    // 捕获组说明：
-    //   [1] 名称（含可选括号注释）
-    //   [2] ×N 前缀乘数部分（整体，可选）
-    //   [3] ×N 中的数字
-    //   [4] ×N 中的小单位（两/口，可选）
-    //   [5] 主数量数字
-    //   [6] 主单位
-    const PAT_NAME_FIRST = /([\u4e00-\u9fff]{2,}(?:[（\(][\u4e00-\u9fff\d\wg克只个颗片块碗枚份口两\s]{0,20}[）\)])?)(?:\s*)([×x]?\s*(\d+(?:\.\d+)?)\s*(两|口)?\s*)?(?:\s*(\d+(?:\.\d+)?)\s*(" + DISH_UNIT + "))/gi;
+    // ---- 主正则：名称 + [×N] + 数量 + 单位 ----
+    // 支持两种格式：
+    //   A: 名称 ×N单位   (如 "芝士牛乳奶油面包×2个")  → G2=数量, G3=单位
+    //   B: 名称 数量单位 (如 "丝瓜20g"、"梭子蟹1.5只") → G4=数量, G5=单位
+    // 捕获组：G1=名称, G2=×N数量, G3=×N单位, G4=普通数量, G5=普通单位
+    const PAT_MAIN = new RegExp(
+      "([\\u4e00-\\u9fff]{2,})" +                       // G1: 名称 ≥2字
+      "(?:[（\\(][^)）]{0,30}[）\\)])?" +                // 可选括号注释（非捕获）
+      "(?:" +
+        "(?:\\s*[×x]\\s*(\\d+(?:\\.\\d+)?)\\s*)(" + REAL_UNIT + ")" +  // 格式A: ×N
+        "|" +
+        "(?:\\s*(\\d+(?:\\.\\d+)?)\\s*)(" + REAL_UNIT + ")" +         // 格式B: 普通
+      ")",
+      "gi"
+    );
 
     let m1;
-    while ((m1 = PAT_NAME_FIRST.exec(foodText)) !== null) {
+    while ((m1 = PAT_MAIN.exec(foodText)) !== null) {
       let rawName = (m1[1] || "").trim();
-      const multiplierSection = m1[2] || ""; // ×N 整体部分
-      const prefixQty = m1[3] || "";         // ×N 数字
-      const prefixUnit = m1[4] || "";        // 两/口
-      const qty = m1[5];                     // 主数量
-      const unit = m1[6];                    // 主单位
+      const qtyA = m1[2], unitA = m1[3];   // 格式A: ×N
+      const qtyB = m1[4], unitB = m1[5];   // 格式B: 普通
+      let finalQty = parseFloat(qtyA || qtyB || 0);
+      const unit = unitA || unitB || "";
 
-      // 清理名称：去掉尾部括号内容中的纯修饰词，保留有意义的
-      rawName = rawName.replace(/[（\(][\s]*(?:大|中|小|可食\d*[g克]?)\s*[）\)]/gi, (bracketContent) => {
-        // 如果括号里是"可食XXg"这种有用信息，保留括号
-        if (/可食/.test(bracketContent)) return bracketContent;
-        return ""; // 否则去掉括号
-      }).trim();
-      // 再清理一次残留空括号
-      rawName = rawName.replace(/[（()\）]/g, "").trim();
-
-      if (rawName.length < 2) continue;
-      // 排除营养标签误匹配
-      if (/^(?:总热量|热量|能量|碳水(?:化合物)?|蛋白质|脂肪|胆固醇|嘌呤|说明)$/i.test(rawName)) continue;
-
-      // 计算最终数量
-      let finalQty = parseFloat(cnToArabic(qty)) || 0;
-      // 解析 ×N 前缀乘数（如 "×2" → 乘以 2）
-      if (multiplierSection) {
-        const multMatch = multiplierSection.match(/[×x]\s*(\d+(?:\.\d+)?)/);
-        if (multMatch) finalQty *= parseFloat(cnToArabic(multMatch[1])) || 1;
+      // 剥离名称中的数量词前缀
+      const prefixMatch = rawName.match(QTY_PREFIX_RE);
+      if (prefixMatch && rawName.length > prefixMatch[0].length) {
+        rawName = rawName.slice(prefixMatch[0].length).trim();
       }
-      if (prefixQty) finalQty += parseFloat(cnToArabic(prefixQty)) || 0;
 
-      const displayUnit = unit || prefixUnit || "份";
-      const key = rawName + finalQty + displayUnit;
+      // 清理括号
+      rawName = rawName.replace(/[（()\）]/g, "").trim();
+      if (rawName.length < 2) continue;
+
+      // 排除修饰词和营养标签
+      if (/^(?:可食|大|中|小|约|余|总热量|热量|能量|碳水(?:化合物)?|蛋白质|脂肪|胆固醇|嘌呤|说明)$/i.test(rawName)) continue;
+
+      const key = rawName + finalQty + unit;
       if (seenNames.has(key)) continue;
       seenNames.add(key);
 
       meals.push({
-        name: rawName + "(" + finalQty + displayUnit + ")",
+        name: rawName + "(" + finalQty + unit + ")",
         cal: "", c: "", p: "", f: "", ch: "", pu: "",
         _rawName: rawName,
         _qty: finalQty,
-        _unit: displayUnit,
+        _unit: unit,
+      });
+    }
+
+    // ---- 虚拟单位补充扫描（口/碗/杯/勺，数量可选默认1）----
+    // 匹配："莲藕汤两口"、"一碗饭"、"三杯奶"
+    const PAT_VIRT = new RegExp(
+      "([\\u4e00-\\u9fff]{2,})\\s*(?:(\\d+(?:\\.\\d+)?)\\s*)?(" + VIRT_UNIT + ")(?![\\u4e00-\\u9fff])",
+      "gi"
+    );
+    let mV;
+    while ((mV = PAT_VIRT.exec(foodText)) !== null) {
+      let rawName = (mV[1] || "").trim();
+      const vQty = mV[2] ? parseFloat(mV[2]) : 1;
+      const vUnit = mV[3] || "";
+
+      // 剥离数量词前缀
+      const pm = rawName.match(QTY_PREFIX_RE);
+      if (pm && rawName.length > pm[0].length) rawName = rawName.slice(pm[0].length).trim();
+      // 剥离尾部数字
+      rawName = rawName.replace(TRAIL_NUM_RE, "").trim();
+      if (rawName.length < 2) continue;
+      if (/^(?:可食|大|中|小)$/.test(rawName)) continue;
+
+      const key = rawName + vUnit;
+      if (seenNames.has(key)) continue;
+      seenNames.add(key);
+
+      meals.push({
+        name: rawName + "(" + vQty + vUnit + ")",
+        cal: "", c: "", p: "", f: "", ch: "", pu: "",
+        _rawName: rawName,
+        _qty: vQty,
+        _unit: vUnit,
       });
     }
 
     // ---- 模式 2（辅模式）：数字 + 单位 + 中文名称 ----
-    // 匹配：200克姜母鸭、50g花生、三片西瓜
+    // 匹配：200克姜母鸭、50g花生、三片西瓜（仅当主正则没匹配到时）
     if (meals.length === 0) {
       const PAT_QTY_FIRST = new RegExp("(" + CNUM + ")\\s*(" + DISH_UNIT + ")\\s*([\\u4e00-\\u9fff]{2,}(?:[\\u4e00-\\u9fff\\(\\)\\[\\]·\\-]{0,15}?)?)", "gi");
       let m2;
