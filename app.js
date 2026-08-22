@@ -1360,19 +1360,29 @@
     // ---- 虚拟单位补充扫描（口/碗/杯/勺，数量可选默认1）----
     // 匹配："莲藕汤两口"、"一碗饭"、"三杯奶"
     const PAT_VIRT = new RegExp(
-      "([\\u4e00-\\u9fff]{2,})\\s*(?:(\\d+(?:\\.\\d+)?)\\s*)?(" + VIRT_UNIT + ")(?![\\u4e00-\\u9fff])",
+      "([\\u4e00-\\u9fff]{2,})\\s*(?:(\\d+(?:\\.\\d+)?|[零一二两三四五六七八九十半]+)\\s*)?(" + VIRT_UNIT + ")(?![\\u4e00-\\u9fff])",
       "gi"
     );
     let mV;
     while ((mV = PAT_VIRT.exec(foodText)) !== null) {
       let rawName = (mV[1] || "").trim();
-      const vQty = mV[2] ? parseFloat(mV[2]) : 1;
+      let vQtyRaw = mV[2] || "";
       const vUnit = mV[3] || "";
+
+      // 如果数字捕获组为空，尝试从名称尾部回溯提取中文数字（如"莲藕汤两"→ qty=2）
+      if (!vQtyRaw) {
+        const trailMatch = rawName.match(/([零一二两三四五六七八九十半]+)$/);
+        if (trailMatch && rawName.length > trailMatch[0].length) {
+          vQtyRaw = trailMatch[1];
+          rawName = rawName.slice(0, -trailMatch[0].length).trim();
+        }
+      }
+      const vQty = vQtyRaw ? (parseFloat(cnToArabic(vQtyRaw)) || 1) : 1;
 
       // 剥离数量词前缀
       const pm = rawName.match(QTY_PREFIX_RE);
       if (pm && rawName.length > pm[0].length) rawName = rawName.slice(pm[0].length).trim();
-      // 剥离尾部数字
+      // 剥离尾部数字（阿拉伯数字残留）
       rawName = rawName.replace(TRAIL_NUM_RE, "").trim();
       if (rawName.length < 2) continue;
       if (/^(?:可食|大|中|小)$/.test(rawName)) continue;
