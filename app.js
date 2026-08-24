@@ -1291,6 +1291,42 @@
     let foodText = foodTextRaw;
     // 预处理：将 + 号和中文逗号统一为英文逗号（用于"莲藕汤两口+一口莲藕40g"等格式）
     foodText = foodText.replace(/\+/g, ",").replace(/[，、]/g, ",");
+    // 剥离「名称：」前缀
+    foodText = foodText.replace(/^名称\s*[：:]\s*/i, "");
+
+    /* ========== 预处理：提取"菜名（qty+desc）"格式，防止括号内碎片被误匹配 ========== */
+    // 将 "芝士牛乳奶油包（70g面粉自制，165g）" → "芝士牛乳奶油包165g"
+    // 将 "仙草奶烧仙草（½份）" → "仙草奶烧仙草0.5份"
+    const FRAC = { "½": "0.5", "¼": "0.25", "¾": "0.75", "⅓": "0.33", "⅔": "0.67" };
+    foodText = foodText.replace(/([\u4e00-\u9fff]{2,})[（\(]([^)）]{1,40})[）\)]/g, (match, name, content) => {
+      // 从括号内容提取所有数量+单位，排除"用油/油/配料"相关的
+      const qtyMatches = [];
+      const qtyRe = /(\d+(?:\.\d+)?)\s*(克|g|个|颗|片|块|碗|盒|根|条|只|枚|份|串|把|杯|袋|罐|瓶|勺|张|瓣|粒|尾|笼|碟|盘|两)/g;
+      let qm;
+      while ((qm = qtyRe.exec(content)) !== null) {
+        // 检查前面的上下文，排除"用油"、"油"、"配料"等非主料数量
+        const before = content.slice(Math.max(0, qm.index - 3), qm.index);
+        if (/用油|配料|调料|酱汁|汤底/.test(before)) continue;
+        qtyMatches.push({ qty: parseFloat(qm[1]), unit: qm[2], idx: qm.index });
+      }
+      if (qtyMatches.length > 0) {
+        // 取最大的数量（通常是主料总重，如"70g面粉自制，165g"→165g，"100g熟，用油5g"→100g）
+        const best = qtyMatches.reduce((a, b) => (a.qty >= b.qty ? a : b));
+        return name + best.qty + best.unit;
+      }
+      // 尝试匹配分数（½份、¼杯等）
+      const fracMatch = content.match(/([½¼¾⅓⅔])\s*(份|碗|杯|勺|个|颗)/);
+      if (fracMatch && FRAC[fracMatch[1]]) {
+        return name + FRAC[fracMatch[1]] + fracMatch[2];
+      }
+      // 尝试匹配中文数字+单位（"两口"、"半碗"）
+      const cnMatch = content.match(/([零一二两三四五六七八九十半]+)\s*(份|碗|杯|勺|口|个|颗)/);
+      if (cnMatch) {
+        return name + cnToArabic(cnMatch[1]) + cnMatch[2];
+      }
+      // 括号内没有可识别的数量，去掉括号保留名称
+      return name;
+    });
 
     if (!foodText.trim()) {
       const single = parseNutritionText(raw);
