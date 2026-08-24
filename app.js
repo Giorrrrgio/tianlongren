@@ -274,6 +274,7 @@
         water: {},
         drinks: [
           { id: "d1", name: "水", water: 200, caffeine: 0, chlorogenic: 0, theophylline: 0 },
+          { id: "d4", name: "水(大杯)", water: 500, caffeine: 0, chlorogenic: 0, theophylline: 0 },
           { id: "d2", name: "茶", water: 200, caffeine: 6.67, chlorogenic: 0, theophylline: 4.17 },
           { id: "d3", name: "咖啡", water: 250, caffeine: 60, chlorogenic: 60, theophylline: 0 },
         ],
