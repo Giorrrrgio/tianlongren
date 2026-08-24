@@ -2035,14 +2035,25 @@
   }
 
   /* ============ 动作详情弹窗 ============ */
+  /* 动作名 → GIF 映射（已生成的像素猫动图） */
+  const EXERCISE_GIF = {
+    "史密斯卧推": "exercise-gifs/smith_bench.gif",
+    "蝴蝶机夹胸": "exercise-gifs/butterfly_fly.gif",
+    "坐姿推胸机": "exercise-gifs/seated_press.gif",
+    "上斜杠铃卧推": "exercise-gifs/incline_bench.gif",
+    "高位下拉": "exercise-gifs/lat_pulldown.gif",
+  };
+
   function exerciseDetailModal(part, idx) {
     const act = (D.fitness.actions[part] || [])[idx];
     if (!act) return;
     // 从 EXERCISE_DB 查找详细信息
     const db = (EXERCISE_DB[part] || []).find((e) => e.name === act.name);
     if (!db) { toast("该动作暂无详细说明", "info"); return; }
+    const gif = EXERCISE_GIF[act.name] || "";
     openModal(act.name, `
       <div style="text-align:left;">
+        ${gif ? `<div style="text-align:center;margin-bottom:12px;"><img src="${gif}" style="max-width:100%;border-radius:12px;" alt="${act.name}"></div>` : ""}
         <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
           <span class="tag tag-green">主要 ${db.primary}</span>
           <span class="tag tag-amber">次要 ${db.secondary}</span>
