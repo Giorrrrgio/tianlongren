@@ -2577,10 +2577,13 @@
         <div class="punch-hist">${hist}</div>
       </div>`;
     // 事件委托：打卡操作（时间修改/现在打卡/删除/清空）
-    $("#body-punch").onclick = (e) => {
+    $("#body-punch").onchange = (e) => {
       const d = e.target;
       if (d.classList.contains("punch-time")) { punchRec(t).times[d.dataset.pk] = d.value; save(); renderPunch(); }
-      else if (d.dataset.now) { punchRec(t).times[d.dataset.now] = nowHM(); save(); renderPunch(); }
+    };
+    $("#body-punch").onclick = (e) => {
+      const d = e.target;
+      if (d.dataset.now) { punchRec(t).times[d.dataset.now] = nowHM(); save(); renderPunch(); }
       else if (d.dataset.del) { delete punchRec(t).times[d.dataset.del]; save(); renderPunch(); toast("已删除该打卡"); }
       else if (d.dataset.clear) { if (confirm("清空今日（" + t + "）全部打卡记录？")) { delete D.punch[t]; save(); renderPunch(); renderOverview(); toast("已清空今日打卡"); } }
     };
