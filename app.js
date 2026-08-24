@@ -337,6 +337,8 @@
     if (!m.nutrition) m.nutrition = {};
     if (!m.nutrition.daily) m.nutrition.daily = {};
     if (!m.nutrition.drinks) m.nutrition.drinks = [];
+    /* 确保「水(大杯) 500ml」始终存在（老存档补全） */
+    if (!m.nutrition.drinks.some((d) => d.id === "d4")) m.nutrition.drinks.push({ id: "d4", name: "水(大杯)", water: 500, caffeine: 0, chlorogenic: 0, theophylline: 0 });
     if (!m.nutrition.weight) m.nutrition.weight = [];
     if (!m.fitness) m.fitness = {};
     if (!m.fitness.actions) m.fitness.actions = {};
