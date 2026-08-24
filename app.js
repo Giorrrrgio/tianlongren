@@ -239,6 +239,76 @@
   const TRAIN_PARTS = ["胸", "肩", "背", "臂", "腿", "臀", "有氧"];
   const CAL_PARTS = ["胸", "肩", "背", "臂", "腿", "臀", "腹", "有氧", "休息"];
 
+  /* ============ 预置动作库（参考 PAWLIFT 风格） ============ */
+  const EXERCISE_DB = {
+    "胸": [
+      { name: "史密斯卧推", primary: "中胸", secondary: "前束 · 外侧", desc: "沿固定直线轨道完成水平推，胸大肌为主，肱三头肌和前三角肌协同；固定杠路要求先摆准凳位。", setup: "把平凳放在史密斯杆下，空杆试轨迹，使下放时杆落到中胸且前臂接近垂直。仰卧后肩胛后收下沉、双脚踩稳，正握略宽于肩并确认两侧安全限位。", steps: "旋转手腕解锁，缓慢下放至中胸附近，肘部约45-75度；推起时保持肩胛稳定，不要锁死肘关节。" },
+      { name: "蝴蝶机夹胸", primary: "中胸", secondary: "前束", desc: "通过肘垫持续提供阻力，主要完成肩关节水平内收；与推胸机不同，肘角基本固定且没有主动伸肘。", setup: "调整座高和靠背，使上臂贴住肘垫后接近水平、肘约90度，手掌轻握把手；头、上背、骨盆贴垫，肩胛后收下沉。", steps: "保持肘角不变，用胸部发力将两臂向中间夹拢，顶峰收缩1秒；缓慢回放至胸部有拉伸感，不要完全放松。" },
+      { name: "坐姿推胸机", primary: "中胸", secondary: "前束 · 外侧", desc: "以胸大肌为主，前三角肌与肱三头肌协同；机器轨迹降低稳定要求，但仍需主动固定肩胛。", setup: "调整座高，让把手对准中下胸而不是肩或颈；头、上背和骨盆贴住靠垫，双脚踩稳，全握把手，手腕叠在肘后方。", steps: "先让肩胛后收下沉，呼气将把手水平推出至肘微屈；吸气缓慢回放至胸部有拉伸感，保持节奏控制。" },
+      { name: "上斜杠铃卧推", primary: "上胸", secondary: "前束 · 外侧", desc: "主要偏重上胸，使用杠铃完成。动作中优先保持可控的活动范围，不追求借力到位。", setup: "凳面约30度，肩胛后下收紧，双脚踩稳；全握且握距略宽于肩。", steps: "杠铃有控降向上胸或锁骨下方，手腕中立；推起时沿斜上方轨迹，保持前臂接近垂直，顶部不锁死。" },
+      { name: "平板哑铃卧推", primary: "中胸", secondary: "前束 · 三头", desc: "哑铃允许更大活动范围和自然轨迹，对胸肌刺激更充分，同时要求更多稳定性。", setup: "仰卧平凳，双手各持哑铃置于胸侧，掌心朝前，肩胛后收下沉，双脚踩稳。", steps: "呼气将哑铃向上推起至手臂接近伸直，哑铃在顶点微微靠拢但不碰撞；吸气缓慢下放至胸侧有拉伸感。" },
+      { name: "绳索夹胸", primary: "中胸", secondary: "前束", desc: "绳索提供持续张力，在整个动作范围内保持胸肌受力，顶峰收缩感强。", setup: "将两侧滑轮调至肩高或略高，双手各握把，向前跨一步，躯干微微前倾，肘部微屈。", steps: "保持肘角固定，用胸肌发力将双手向前下方拉拢至胸前交叉；缓慢回放至胸部有拉伸感。" },
+      { name: "双杠臂屈伸", primary: "下胸", secondary: "三头 · 前束", desc: "自重复合动作，下胸和肱三头肌为主；身体前倾越多，胸部参与越多。", setup: "双手撑在双杠上，手臂伸直将身体撑起，躯干前倾约30度，双腿可弯曲交叉。", steps: "缓慢屈肘下放身体至肩部低于肘部（有拉伸感但不疼痛）；呼气用胸和三头发力将身体推回起始位。" },
+    ],
+    "背": [
+      { name: "高位下拉", primary: "背阔", secondary: "长头 · 上背", stabilizer: "握力", desc: "主要偏重背阔，使用器械完成。动作中优先保持可控的活动范围，不追求借力到位。", setup: "坐稳并让大腿压紧挡板，双脚踩稳；正握长杆且握距略宽于肩，躯干仅微微后倾。", steps: "肩胛下沉启动，将杆拉向上胸或锁骨附近，肘部指向地面；缓慢放回至手臂接近伸直但不耸肩。" },
+      { name: "杠铃划船", primary: "背阔", secondary: "斜方 · 竖脊", desc: "经典背部厚度动作，背阔肌和斜方肌中下部为主，竖脊肌等长收缩维持躯干稳定。", setup: "双脚与肩同宽站立，屈髋俯身约45度，背部平直，正握杠铃略宽于肩，手臂自然下垂。", steps: "呼气将杠铃沿大腿拉向下腹部，肘部贴近身体，顶峰收缩1秒；吸气缓慢下放至手臂伸直。" },
+      { name: "坐姿划船", primary: "背阔", secondary: "斜方 · 菱形", desc: "坐姿划船机提供稳定支撑，适合专注背部发力；V把或宽把各有侧重。", setup: "坐在划船机上，双脚踩稳踏板，膝盖微屈，双手握住把手，躯干挺直微微后仰。", steps: "呼气将把手拉向下腹部，肩胛后收，肘部贴近身体；吸气缓慢放回，保持躯干稳定不晃动。" },
+      { name: "引体向上", primary: "背阔", secondary: "肱二头 · 大圆", desc: "自重背部王牌动作，背阔肌宽度发展的最佳选择；需要一定上肢力量基础。", setup: "正握单杠，握距略宽于肩，手臂完全伸直悬挂，肩胛下沉。", steps: "呼气用背部发力将身体拉起至下巴过杠；吸气缓慢下放至手臂接近伸直，控制下落速度。" },
+      { name: "哑铃单臂划船", primary: "背阔", secondary: "斜方 · 后束", desc: "单侧训练可纠正左右不平衡，动作范围大，背阔肌拉伸和收缩更充分。", setup: "一手和同侧膝撑在平凳上，另一手持哑铃自然下垂，背部平直，核心收紧。", steps: "呼气将哑铃沿体侧拉向髋部，肘部贴近身体，顶峰收缩；吸气缓慢下放至背阔有拉伸感。" },
+      { name: "直臂下压", primary: "背阔", secondary: "三头 · 胸大", desc: "孤立背阔肌的动作，手臂保持伸直，完全靠肩关节伸展完成。", setup: "站在高位滑轮前，双手正握横杆，握距与肩同宽，手臂向前伸直，躯干微前倾。", steps: "呼气保持手臂伸直，将横杆向下压至大腿前侧；吸气缓慢放回至背阔有拉伸感。" },
+    ],
+    "肩": [
+      { name: "哑铃推举", primary: "中束", secondary: "前束 · 三头", desc: "肩部围度核心动作，三角肌中束为主；哑铃版本允许更自然的运动轨迹。", setup: "坐姿靠背或站姿，双手各持哑铃举至肩高，掌心朝前，肘部在手腕正下方。", steps: "呼气将哑铃垂直向上推起至手臂接近伸直但不锁死；吸气缓慢下放至耳侧水平。" },
+      { name: "侧平举", primary: "中束", secondary: "前束", desc: "三角肌中束孤立动作，肩部宽度的关键；小重量高次数效果更佳。", setup: "站姿或坐姿，双手各持哑铃置于体侧，掌心相对，肘部微屈。", steps: "呼气将哑铃向两侧举起至肩高，肘部略高于手腕；吸气缓慢下放至体侧，不要完全放松。" },
+      { name: "俯身侧平举", primary: "后束", secondary: "斜方 · 菱形", desc: "三角肌后束孤立动作，改善圆肩体态；俯身角度决定后束参与度。", setup: "屈髋俯身约45-90度，双手各持哑铃自然下垂，掌心相对，背部平直。", steps: "呼气将哑铃向两侧举起至与肩同高，想象用肘部引领；吸气缓慢下放，保持后束张力。" },
+      { name: "杠铃推举", primary: "中束", secondary: "前束 · 三头", desc: "站姿杠铃推举是上肢力量的经典指标，核心和下肢参与稳定。", setup: "站姿双脚与肩同宽，双手正握杠铃置于锁骨前，握距略宽于肩，核心收紧。", steps: "呼气将杠铃垂直向上推起至手臂伸直，头部微微前移让出轨迹；吸气缓慢下放至锁骨。" },
+      { name: "前平举", primary: "前束", secondary: "中束", desc: "三角肌前束孤立动作，可哑铃或杠铃完成；前束通常不需要太多额外训练。", setup: "站姿，双手持哑铃或杠铃置于大腿前侧，掌心朝下。", steps: "呼气将重量向前上方举起至肩高，手臂伸直但不锁死；吸气缓慢下放至起始位。" },
+      { name: "绳索面拉", primary: "后束", secondary: "斜方 · 外旋", desc: "后束和肩袖肌群的康复性动作，改善肩关节健康；绳索提供持续张力。", setup: "将绳索调至面部高度，双手正握绳索两端，向后退一步，手臂向前伸直。", steps: "呼气将绳索拉向面部两侧，肘部高于手腕，外旋肩关节；吸气缓慢放回。" },
+    ],
+    "臂": [
+      { name: "杠铃弯举", primary: "肱二头", secondary: "前臂", desc: "肱二头肌经典动作，杠铃允许更大重量；直杠和曲杠对手腕压力不同。", setup: "站姿，双手反握杠铃与肩同宽，手臂自然下垂，肘部贴近体侧。", steps: "呼气屈肘将杠铃向上弯举至肩前，大臂保持不动；吸气缓慢下放至手臂接近伸直。" },
+      { name: "哑铃弯举", primary: "肱二头", secondary: "前臂", desc: "哑铃弯举允许旋转手腕，对肱二头肌刺激更全面；可交替或同时完成。", setup: "站姿或坐姿，双手各持哑铃置于体侧，掌心朝前，肘部贴近体侧。", steps: "呼气屈肘将哑铃向上弯举，可在上升过程中外旋手腕；吸气缓慢下放。" },
+      { name: "绳索下压", primary: "肱三头", secondary: "前臂", desc: "肱三头肌孤立动作，绳索提供持续张力；V把和直杆各有侧重。", setup: "站在高位滑轮前，双手握住绳索或直杆，肘部贴近体侧，前臂与地面平行。", steps: "呼气伸肘将把手向下压至手臂伸直；吸气缓慢放回至前臂与地面平行，大臂不动。" },
+      { name: "仰卧臂屈伸", primary: "肱三头", secondary: "前臂", desc: "俗称'碎颅者'，肱三头肌长头的经典动作；可用杠铃或哑铃完成。", setup: "仰卧平凳，双手持杠铃或哑铃举至胸部正上方，手臂伸直。", steps: "保持大臂垂直不动，屈肘将重量缓慢下放至额头附近；呼气伸肘将重量推回起始位。" },
+      { name: "锤式弯举", primary: "肱肌", secondary: "肱二头 · 前臂", desc: "锤式握法更侧重肱肌和肱桡肌，增加手臂整体厚度。", setup: "站姿，双手各持哑铃置于体侧，掌心相对（锤式握法）。", steps: "呼气屈肘将哑铃向上弯举，保持掌心相对；吸气缓慢下放。" },
+      { name: "窄距卧推", primary: "肱三头", secondary: "胸 · 前束", desc: "复合动作中肱三头肌参与度最高的卧推变式，可同时发展推力。", setup: "仰卧平凳，双手正握杠铃，握距窄于肩（约与肩同宽），手臂伸直将杠铃举至胸上方。", steps: "缓慢下放杠铃至下胸附近，肘部贴近身体；呼气将杠铃推回起始位。" },
+    ],
+    "腿": [
+      { name: "杠铃深蹲", primary: "股四头", secondary: "臀大 · 核心", desc: "下肢力量之王，股四头肌为主，臀大肌和核心协同；深度和姿势比重量更重要。", setup: "将杠铃置于斜方肌上部（高杠）或三角肌后束（低杠），双脚与肩同宽或略宽，脚尖微外展。", steps: "屈髋屈膝同时下蹲至大腿与地面平行或更低，膝盖方向与脚尖一致；呼气伸髋伸膝站起。" },
+      { name: "腿举", primary: "股四头", secondary: "臀大 · 腘绳", desc: "腿举机提供固定轨迹，适合大重量训练；脚的位置决定股四头/臀部侧重。", setup: "坐在腿举机上，背部紧贴靠垫，双脚踩在踏板上与肩同宽，膝盖与脚尖方向一致。", steps: "缓慢屈膝下放至大腿接近小腿（不要过度弯曲）；呼气将踏板推回至膝盖微屈不锁死。" },
+      { name: "罗马尼亚硬拉", primary: "腘绳", secondary: "臀大 · 竖脊", desc: "腘绳肌和臀部的黄金动作，强调离心控制和髋部铰链；背部保持平直。", setup: "站姿，双手正握杠铃或哑铃置于大腿前侧，膝盖微屈，核心收紧。", steps: "保持膝盖角度不变，屈髋将重量沿大腿下放至小腿中部（腘绳有拉伸感）；呼气伸髋站起。" },
+      { name: "腿屈伸", primary: "股四头", secondary: "—", desc: "股四头肌孤立动作，适合热身或收尾；注意膝盖不要过度锁死。", setup: "坐在腿屈伸机上，调整靠背使膝盖对准转轴，脚背勾住滚垫。", steps: "呼气将小腿向上抬起至膝盖接近伸直但不锁死；吸气缓慢下放至起始位。" },
+      { name: "保加利亚分腿蹲", primary: "股四头", secondary: "臀大 · 核心", desc: "单侧下肢动作，纠正左右不平衡；对股四头和臀部刺激极强。", setup: "后脚脚背置于凳上，前脚向前跨出，双手可持哑铃或叉腰，躯干直立。", steps: "缓慢屈膝下蹲至前腿大腿与地面平行；呼气用前腿发力站起。" },
+      { name: "坐姿提踵", primary: "比目鱼", secondary: "腓肠", desc: "小腿训练基础动作，坐姿更侧重比目鱼肌；全程控制节奏。", setup: "坐在提踵机上，膝盖置于垫下，前脚掌踩在踏板上，脚跟悬空。", steps: "缓慢下放脚跟至小腿有拉伸感；呼气踮起脚尖至顶峰收缩。" },
+    ],
+    "臀": [
+      { name: "臀桥", primary: "臀大", secondary: "腘绳 · 核心", desc: "臀部激活和基础力量动作，适合初学者或作为热身；可徒手或负重。", setup: "仰卧，双脚平放地面与髋同宽，膝盖弯曲约90度，手臂置于体侧。", steps: "呼气伸髋将臀部抬离地面至肩-膝成一直线，顶峰收缩臀部1秒；吸气缓慢下放。" },
+      { name: "杠铃臀推", primary: "臀大", secondary: "腘绳 · 核心", desc: "臀部围度增长的王牌动作，可加载大重量；上背靠在凳上增加稳定性。", setup: "上背部靠在平凳边缘，杠铃置于髋部（可用垫子缓冲），双脚平放地面。", steps: "呼气伸髋将杠铃向上推至肩-膝成一直线，顶峰收缩；吸气缓慢下放至臀部接近地面。" },
+      { name: "硬拉", primary: "臀大", secondary: "腘绳 · 竖脊 · 握力", desc: "全身性复合动作，后链肌群整体发展；传统硬拉从地面启动，技术要求高。", setup: "站姿，杠铃贴近小腿，双手正握或正反握杠铃，背部平直，核心收紧。", steps: "伸髋伸膝将杠铃沿身体拉起至站直；缓慢下放至地面，保持背部平直。" },
+      { name: "跪姿后踢腿", primary: "臀大", secondary: "核心", desc: "臀部孤立动作，适合激活和塑形；可用弹力带或绳索增加阻力。", setup: "跪姿，双手撑地，背部平直，核心收紧。", steps: "呼气将一条腿向后上方抬起至臀部收紧，膝盖可微屈；吸气缓慢下放。" },
+      { name: "侧步走", primary: "臀中", secondary: "臀小 · 稳定", desc: "弹力带侧步走是臀中肌的经典激活动作，改善髋部稳定性。", setup: "将弹力带套在膝盖上方或脚踝处，微屈髋屈膝，半蹲姿势。", steps: "保持半蹲姿势，向侧方迈步，感受臀中肌发力；控制速度，不要弹动。" },
+    ],
+    "有氧": [
+      { name: "跑步机", primary: "心肺", secondary: "下肢", desc: "最基础的有氧设备，可调节速度和坡度；坡度走对膝盖更友好。", setup: "站在跑步机两侧踏板上，启动后缓慢踏上跑带。", steps: "从慢速开始逐渐增加至目标速度；保持躯干直立，自然摆臂。" },
+      { name: "椭圆机", primary: "心肺", secondary: "下肢 · 核心", desc: "零冲击有氧，对关节友好；手脚并用的全身运动。", setup: "双手握住把手，双脚踩在踏板上。", steps: "保持躯干直立，手脚协调配合做椭圆运动；可调节阻力和坡度增加强度。" },
+      { name: "划船机", primary: "心肺", secondary: "背 · 腿 · 核心", desc: "全身参与度最高的有氧设备之一，腿部驱动+背部拉桨。", setup: "坐在划船机上，双脚固定在踏板上，双手握住把手。", steps: "腿部先发力蹬伸，然后躯干后仰，最后手臂拉桨；回放时顺序相反。" },
+      { name: "跳绳", primary: "心肺", secondary: "小腿 · 协调", desc: "高效燃脂的便携有氧运动，对协调性和小腿力量有一定要求。", setup: "双手握住跳绳手柄，绳长调至腋下高度。", steps: "用手腕摇绳而非手臂，前脚掌着地保持弹性；可从双脚跳逐渐过渡到单脚或交叉跳。" },
+      { name: "波比跳", primary: "心肺", secondary: "全身", desc: "高强度全身动作，结合深蹲、俯卧撑和跳跃，燃脂效率极高。", setup: "站姿，双脚与肩同宽。", steps: "下蹲双手撑地→后跳成平板→俯卧撑→前跳回蹲姿→垂直跳起；连贯完成。" },
+    ],
+  };
+
+  /* 从动作库生成默认训练动作（首次使用时预填） */
+  function seedExerciseLibrary(ft) {
+    if (!ft.actions) ft.actions = {};
+    TRAIN_PARTS.forEach((p) => {
+      if (!ft.actions[p] || ft.actions[p].length === 0) {
+        const db = EXERCISE_DB[p] || [];
+        ft.actions[p] = db.slice(0, 3).map((e) => ({ name: e.name, maxWeight: 0, sets: 0 }));
+      }
+    });
+  }
+
   /* ============ 图标库（统一线性矢量风格） ============ */
   function icBox(p, cls) { return `<span class="ic ${cls || ''}">${ICON[p] || '•'}</span>`; }
   const ICON = {
@@ -343,6 +413,8 @@
     if (!m.fitness) m.fitness = {};
     if (!m.fitness.actions) m.fitness.actions = {};
     if (!m.fitness.calendar) m.fitness.calendar = {};
+    /* 首次使用预填动作库 */
+    seedExerciseLibrary(m.fitness);
     return m;
   }
   // 兼容多种导出包裹格式：{data:..} / {state:..} / {save:..} 或直接是 D
@@ -1917,7 +1989,7 @@
       const acts = ft.actions[p] || [];
       const total = acts.reduce((s, a) => s + (a.sets || 0), 0);
       const body = acts.map((a, i) => `<div class="act-row" data-part="${p}" data-i="${i}">
-        <input value="${esc(a.name)}" data-f="name" class="act-name" placeholder="动作名">
+        <input value="${esc(a.name)}" data-f="name" class="act-name" placeholder="动作名" data-info="${p}:${i}" style="cursor:pointer;" title="点击查看动作详情">
         <input type="number" value="${a.maxWeight || 0}" data-f="maxWeight" placeholder="kg" class="act-w">
         <span class="act-sets">${a.sets || 0}组</span>
         <button class="btn btn-sm" data-act="inc">+</button>
@@ -1929,7 +2001,12 @@
           <div class="card-title">${partIcon(p)} ${p} <span class="caret ${trainCollapsed[p] ? "" : "open"}">▸</span></div>
           <span class="card-sub">${acts.length} 动作 / ${total} 组</span>
         </div>
-        <div data-body="${p}" style="${trainCollapsed[p] ? "display:none;" : ""}">${body}<button class="btn btn-ghost w-full mt-2" data-add="${p}">+ 添加动作</button></div>
+        <div data-body="${p}" style="${trainCollapsed[p] ? "display:none;" : ""}">${body}
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button class="btn btn-ghost" style="flex:1;" data-add="${p}">+ 添加动作</button>
+            <button class="btn btn-ghost" style="flex:1;" data-lib="${p}">📚 从动作库选择</button>
+          </div>
+        </div>
       </div>`;
     }).join("");
     const el = $("#trainSections");
@@ -1939,6 +2016,8 @@
     el.addEventListener("click", (ev) => {
       const head = ev.target.closest("[data-toggle]"); if (head) { const p = head.dataset.toggle; trainCollapsed[p] = !trainCollapsed[p]; const b = $(`[data-body="${p}"]`); b.style.display = trainCollapsed[p] ? "none" : "block"; const c = head.querySelector(".caret"); if (c) c.classList.toggle("open", !trainCollapsed[p]); return; }
       const add = ev.target.closest("[data-add]"); if (add) { const p = add.dataset.add; if (!ft.actions[p]) ft.actions[p] = []; ft.actions[p].push({ name: "新动作", maxWeight: 0, sets: 0 }); save(); renderTrainSections(); return; }
+      const lib = ev.target.closest("[data-lib]"); if (lib) { exerciseLibraryModal(lib.dataset.lib); return; }
+      const info = ev.target.closest("[data-info]"); if (info) { const [p, i] = info.dataset.info.split(":"); exerciseDetailModal(p, +i); return; }
       const btn = ev.target.closest("[data-act]"); if (!btn) return;
       const row = btn.closest(".act-row"); if (!row) return;
       const p = row.dataset.part, i = +row.dataset.i, act = btn.dataset.act;
@@ -1952,6 +2031,55 @@
     el.addEventListener("change", (ev) => {
       const inp = ev.target.closest("input[data-f]"); if (!inp) return; const p = inp.closest("[data-part]").dataset.part, i = +inp.closest("[data-part]").dataset.i, f = inp.dataset.f;
       if (ft.actions[p] && ft.actions[p][i]) { ft.actions[p][i][f] = f === "name" ? inp.value : (+inp.value || 0); save(); }
+    });
+  }
+
+  /* ============ 动作详情弹窗 ============ */
+  function exerciseDetailModal(part, idx) {
+    const act = (D.fitness.actions[part] || [])[idx];
+    if (!act) return;
+    // 从 EXERCISE_DB 查找详细信息
+    const db = (EXERCISE_DB[part] || []).find((e) => e.name === act.name);
+    if (!db) { toast("该动作暂无详细说明", "info"); return; }
+    openModal(act.name, `
+      <div style="text-align:left;">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+          <span class="tag tag-green">主要 ${db.primary}</span>
+          <span class="tag tag-amber">次要 ${db.secondary}</span>
+          ${db.stabilizer ? `<span class="tag tag-gray">稳定 ${db.stabilizer}</span>` : ""}
+        </div>
+        <div class="card-sub" style="margin-bottom:6px;font-weight:700;">动作介绍</div>
+        <div class="card-sub" style="margin-bottom:12px;">${db.desc}</div>
+        <div class="card-sub" style="margin-bottom:6px;font-weight:700;">准备姿势</div>
+        <div class="card-sub" style="margin-bottom:12px;">${db.setup}</div>
+        <div class="card-sub" style="margin-bottom:6px;font-weight:700;">动作步骤</div>
+        <div class="card-sub">${db.steps}</div>
+      </div>`);
+  }
+
+  /* ============ 动作库选择弹窗 ============ */
+  function exerciseLibraryModal(part) {
+    const db = EXERCISE_DB[part] || [];
+    const existing = new Set((D.fitness.actions[part] || []).map((a) => a.name));
+    const list = db.map((e, i) => {
+      const added = existing.has(e.name);
+      return `<div class="card" style="margin-bottom:8px;padding:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <div style="font-weight:700;font-size:14px;">${e.name}</div>
+            <div class="card-sub" style="margin-top:2px;">主要 ${e.primary} · 次要 ${e.secondary}</div>
+          </div>
+          <button class="btn btn-sm ${added ? "btn-ghost" : "btn-primary"}" data-libadd="${part}:${i}" ${added ? "disabled" : ""}>${added ? "已添加" : "+ 添加"}</button>
+        </div>
+      </div>`;
+    }).join("");
+    openModal(`${partIcon(part)} ${part} · 动作库`, `<div style="max-height:60vh;overflow-y:auto;">${list}</div>`);
+    $$("#modalBody [data-libadd]").forEach((b) => b.onclick = () => {
+      const [p, i] = b.dataset.libadd.split(":");
+      const e = EXERCISE_DB[p][+i];
+      if (!D.fitness.actions[p]) D.fitness.actions[p] = [];
+      D.fitness.actions[p].push({ name: e.name, maxWeight: 0, sets: 0 });
+      save(); closeModal(); renderTrainSections(); toast("已添加 " + e.name);
     });
   }
 
