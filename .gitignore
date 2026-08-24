@@ -3,3 +3,13 @@ node_modules/
 testdata/
 deploy/
 .sync/
+_upload_*
+A_*.png
+Keep_this_*.png
+icon-*-new.png
+icon-*-v2.png
+icon-preview.html
+_debug_parse.js
+_selfcheck.js
+package-lock.json
+package.json
