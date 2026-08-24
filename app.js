@@ -245,14 +245,14 @@
     creatine: '💊', fishOil: '🐟',
     chest: '🙌', shoulder: '🤾', back: '🧗', arms: '💪', legs: '🦵', glutes: '🍑', core: '🤸', rest: '😴', cardio: '🏃',
     breakfast: '🍳', lunch: '🍱', dinner: '🍲', snack: '🥨',
-    water: '💧', coffee: '☕', green: '🍵',
+    water: '💧', coffee: '☕', green: '🍵', beer: '🍺',
     carbHigh: '🍚', carbMid: '🍞', carbLow: '🥦',
     salary: '💰', food: '🍽️', transport: '🚗', shopping: '🛒', fun: '🎉', medical: '🏥', house: '🏠',
     dot: '⚪',
   };
   function ic(name, cls) { return icBox(name, cls); }
   const PART_ICON = { '胸': 'chest', '肩': 'shoulder', '背': 'back', '臂': 'arms', '腿': 'legs', '臀': 'glutes', '腹': 'core', '有氧': 'cardio', '休息': 'rest' };
-  const DRINK_ICON = { '水': 'water', '茶': 'green', '咖啡': 'coffee' };
+  const DRINK_ICON = { '水': 'water', '水(大杯)': 'beer', '茶': 'green', '咖啡': 'coffee' };
   const CAT_ICON = { '工资': 'salary', '餐饮': 'food', '交通': 'transport', '购物': 'shopping', '娱乐': 'fun', '医疗': 'medical', '居住': 'house' };
   function partIcon(p) { return ic(PART_ICON[p] || 'dot'); }
   function drinkIcon(n) { return ic(DRINK_ICON[n] || 'dot'); }
