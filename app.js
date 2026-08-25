@@ -2042,6 +2042,11 @@
     "坐姿推胸机": "exercise-gifs/seated_press.gif",
     "上斜杠铃卧推": "exercise-gifs/incline_bench.gif",
     "高位下拉": "exercise-gifs/lat_pulldown.gif",
+    "平板哑铃卧推": "exercise-gifs/db_bench_press.gif",
+    "杠铃划船": "exercise-gifs/barbell_row.gif",
+    "哑铃推举": "exercise-gifs/db_shoulder_press.gif",
+    "杠铃弯举": "exercise-gifs/barbell_curl.gif",
+    "杠铃深蹲": "exercise-gifs/barbell_squat.gif",
   };
 
   function exerciseDetailModal(part, idx) {
