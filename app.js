@@ -2047,6 +2047,11 @@
     "哑铃推举": "exercise-gifs/db_shoulder_press.gif",
     "杠铃弯举": "exercise-gifs/barbell_curl.gif",
     "杠铃深蹲": "exercise-gifs/barbell_squat.gif",
+    "绳索夹胸": "exercise-gifs/cable_fly.gif",
+    "坐姿划船": "exercise-gifs/seated_row.gif",
+    "侧平举": "exercise-gifs/lateral_raise.gif",
+    "绳索下压": "exercise-gifs/cable_pushdown.gif",
+    "罗马尼亚硬拉": "exercise-gifs/rdl.gif",
   };
 
   function exerciseDetailModal(part, idx) {
