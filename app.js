@@ -1406,7 +1406,9 @@
     }
 
     // ===== 单位定义 =====
-    const REAL_UNIT = "(?:g|克|个|颗|片|块|碗|盒|根|条|只|枚|份|串|把|杯|袋|罐|瓶|勺|张|瓣|粒|尾|笼|碟|盘|两)";
+    // REAL_UNIT: 真实量词（可数/可称重），PAT_MAIN 用
+    // 注意：包含足够多的中文量词，避免类似"豆豉排骨3段"的丢失
+    const REAL_UNIT = "(?:g|克|个|颗|片|块|碗|盒|根|条|只|枚|份|串|把|杯|袋|罐|瓶|勺|张|瓣|粒|尾|笼|碟|盘|两|段|节|丁|块|截|块儿|瓣儿|段儿|条儿|块头|坨)";
     const VIRT_UNIT = "(?:口|碗|杯|勺|匙)";
     const CNUM = "(?:\\d+(?:\\.\\d+)?|[零一二两三四五六七八九十半]+)";
 
@@ -1498,7 +1500,7 @@
       if (rawName.length < 2) continue;
       if (/^(?:可食|大|中|小)$/.test(rawName)) continue;
 
-      const key = rawName + vUnit;
+      const key = rawName + vQty + vUnit;
       if (seenNames.has(key)) continue;
       seenNames.add(key);
 
@@ -1564,14 +1566,29 @@
     if (meals.length >= 2 && sumCal) {
       const totalQty = meals.reduce((s, m) => s + (m._qty || 0), 0);
       if (totalQty > 0) {
-        meals.forEach((m) => {
-          const ratio = (m._qty || 0) / totalQty;
-          m.cal = Math.round((sumCal || 0) * ratio * 10) / 10;
-          m.c   = Math.round((sumC   || 0) * ratio * 10) / 10;
-          m.p   = Math.round((sumP   || 0) * ratio * 10) / 10;
-          m.f   = Math.round((sumF   || 0) * ratio * 10) / 10;
-          m.ch  = Math.round((sumCh  || 0) * ratio * 10) / 10;
-          m.pu  = Math.round((sumPu  || 0) * ratio * 10) / 10;
+        // 优化：最后一个菜品用「剩余值」，避免累加误差
+        // 例如 44.7 分 3 份（1+10+1=12），前两份 3.7+37.3=41.0，最后一份 = 44.7-41.0 = 3.7
+        const NUT_FIELDS = ['cal', 'c', 'p', 'f', 'ch', 'pu'];
+        NUT_FIELDS.forEach((f) => {
+          const totalVal = f === 'cal' ? sumCal :
+                           f === 'c' ? sumC :
+                           f === 'p' ? sumP :
+                           f === 'f' ? sumF :
+                           f === 'ch' ? sumCh : sumPu;
+          if (!totalVal) return;
+          let assigned = 0;
+          meals.forEach((m, i) => {
+            if (i < meals.length - 1) {
+              const ratio = (m._qty || 0) / totalQty;
+              const val = Math.round((totalVal || 0) * ratio * 10) / 10;
+              m[f] = val;
+              assigned += val;
+            } else {
+              // 最后一个菜品：补剩余值（保留 1 位小数）
+              const remain = Math.round(((totalVal || 0) - assigned) * 10) / 10;
+              m[f] = remain;
+            }
+          });
         });
       }
     } else if (meals.length === 1 && sumCal) {
