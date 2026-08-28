@@ -141,7 +141,7 @@
   function addFriv() {
     const amt = Number($("#frAmt").value) || 0;
     const note = $("#frNote").value.trim();
-    const date = $("#frDate").value || todayStr();
+    const date = $("#frDate").value || effectiveToday();
     if (amt <= 0) { toast("请输入金额", "warn"); return; }
     if (!note) { toast("写点买啥吧", "warn"); return; }
     rolloverFriv();
@@ -249,59 +249,49 @@
   /* ============ 预置动作库（参考 PAWLIFT 风格） ============ */
   const EXERCISE_DB = {
     "胸": [
-      { name: "史密斯卧推", primary: "中胸", secondary: "前束 · 外侧", desc: "沿固定直线轨道完成水平推，胸大肌为主，肱三头肌和前三角肌协同；固定杠路要求先摆准凳位。", setup: "把平凳放在史密斯杆下，空杆试轨迹，使下放时杆落到中胸且前臂接近垂直。仰卧后肩胛后收下沉、双脚踩稳，正握略宽于肩并确认两侧安全限位。", steps: "旋转手腕解锁，缓慢下放至中胸附近，肘部约45-75度；推起时保持肩胛稳定，不要锁死肘关节。" },
+      { name: "史密斯推胸", primary: "中胸", secondary: "前束 · 三头", desc: "史密斯机固定轨道的推胸变式，可坐姿或上斜完成；固定轨迹降低稳定要求，适合专注胸肌发力与控制离心。", setup: "调整凳面角度与起始高度，使握把推起时位于中胸正上方；坐稳后肩胛后收下沉，双脚踩实地面，全握把手。", steps: "呼气将把手向前上方推出至肘微屈，顶峰不锁死；吸气缓慢回放至胸部有拉伸感，始终保持肩胛稳定。" },
       { name: "蝴蝶机夹胸", primary: "中胸", secondary: "前束", desc: "通过肘垫持续提供阻力，主要完成肩关节水平内收；与推胸机不同，肘角基本固定且没有主动伸肘。", setup: "调整座高和靠背，使上臂贴住肘垫后接近水平、肘约90度，手掌轻握把手；头、上背、骨盆贴垫，肩胛后收下沉。", steps: "保持肘角不变，用胸部发力将两臂向中间夹拢，顶峰收缩1秒；缓慢回放至胸部有拉伸感，不要完全放松。" },
-      { name: "坐姿推胸机", primary: "中胸", secondary: "前束 · 外侧", desc: "以胸大肌为主，前三角肌与肱三头肌协同；机器轨迹降低稳定要求，但仍需主动固定肩胛。", setup: "调整座高，让把手对准中下胸而不是肩或颈；头、上背和骨盆贴住靠垫，双脚踩稳，全握把手，手腕叠在肘后方。", steps: "先让肩胛后收下沉，呼气将把手水平推出至肘微屈；吸气缓慢回放至胸部有拉伸感，保持节奏控制。" },
-      { name: "上斜杠铃卧推", primary: "上胸", secondary: "前束 · 外侧", desc: "主要偏重上胸，使用杠铃完成。动作中优先保持可控的活动范围，不追求借力到位。", setup: "凳面约30度，肩胛后下收紧，双脚踩稳；全握且握距略宽于肩。", steps: "杠铃有控降向上胸或锁骨下方，手腕中立；推起时沿斜上方轨迹，保持前臂接近垂直，顶部不锁死。" },
-      { name: "平板哑铃卧推", primary: "中胸", secondary: "前束 · 三头", desc: "哑铃允许更大活动范围和自然轨迹，对胸肌刺激更充分，同时要求更多稳定性。", setup: "仰卧平凳，双手各持哑铃置于胸侧，掌心朝前，肩胛后收下沉，双脚踩稳。", steps: "呼气将哑铃向上推起至手臂接近伸直，哑铃在顶点微微靠拢但不碰撞；吸气缓慢下放至胸侧有拉伸感。" },
-      { name: "绳索夹胸", primary: "中胸", secondary: "前束", desc: "绳索提供持续张力，在整个动作范围内保持胸肌受力，顶峰收缩感强。", setup: "将两侧滑轮调至肩高或略高，双手各握把，向前跨一步，躯干微微前倾，肘部微屈。", steps: "保持肘角固定，用胸肌发力将双手向前下方拉拢至胸前交叉；缓慢回放至胸部有拉伸感。" },
-      { name: "双杠臂屈伸", primary: "下胸", secondary: "三头 · 前束", desc: "自重复合动作，下胸和肱三头肌为主；身体前倾越多，胸部参与越多。", setup: "双手撑在双杠上，手臂伸直将身体撑起，躯干前倾约30度，双腿可弯曲交叉。", steps: "缓慢屈肘下放身体至肩部低于肘部（有拉伸感但不疼痛）；呼气用胸和三头发力将身体推回起始位。" },
+      { name: "器械推胸", primary: "中胸", secondary: "前束 · 外侧", desc: "以胸大肌为主，前三角肌与肱三头肌协同；机器轨迹降低稳定要求，但仍需主动固定肩胛。", setup: "调整座高，让把手对准中下胸而不是肩或颈；头、上背和骨盆贴住靠垫，双脚踩稳，全握把手，手腕叠在肘后方。", steps: "先让肩胛后收下沉，呼气将把手水平推出至肘微屈；吸气缓慢回放至胸部有拉伸感，保持节奏控制。" },
+      { name: "坐姿下斜推胸", primary: "下胸", secondary: "三头 · 前束", desc: "下斜角度使阻力线更偏向胸大肌下部，适合补齐下胸线条；器械版轨迹稳定，可专注发力与控制离心。", setup: "调整座椅使把手对准下胸/胸腹交界处；背部贴紧靠垫，双脚踩稳，全握把手，手腕在肘正上方。", steps: "呼气将把手向前下方推出至肘微屈，感受下胸收紧；吸气缓慢回放至胸部有拉伸感，不要耸肩。" },
+      { name: "坐姿上斜推胸", primary: "上胸", secondary: "前束 · 三头", desc: "上斜角度把负荷移向锁骨部胸大肌与前三角肌，是打造上胸厚度的主力器械动作。", setup: "调整座椅使把手对准上胸/锁骨下方；背部贴紧靠垫，肩胛后收下沉，双脚踩稳，全握把手。", steps: "呼气将把手向前上方推出至肘微屈，不要耸肩；吸气缓慢回放至上胸有拉伸感，控制离心。" },
+      { name: "分动挂片卧推", primary: "中胸", secondary: "前束 · 三头", desc: "分动（独立）设计让两侧各自运动，可纠正左右力量差；挂片加载，轨迹接近自由重量但更稳定。", setup: "调整座椅使把手起始位对准中胸；背部贴紧靠垫，双脚踩稳，全握把手，手腕在肘正上方。", steps: "呼气双侧同步将把手推出至肘微屈，留意两侧行程一致；吸气缓慢回放，控制离心。" },
+      { name: "史密斯卧推", primary: "中胸", secondary: "前束 · 外侧", desc: "沿固定直线轨道完成水平推，胸大肌为主，肱三头肌和前三角肌协同；固定杠路要求先摆准凳位。", setup: "把平凳放在史密斯杆下，空杆试轨迹，使下放时杆落到中胸且前臂接近垂直。仰卧后肩胛后收下沉、双脚踩稳，正握略宽于肩并确认两侧安全限位。", steps: "旋转手腕解锁，缓慢下放至中胸附近，肘部约45-75度；推起时保持肩胛稳定，不要锁死肘关节。" },
+    ],
+    "肩": [
+      { name: "器械飞鸟", primary: "后束", secondary: "斜方 · 菱形", desc: "器械飞鸟（反向飞鸟机）以三角肌后束与中背部为主，改善圆肩、强化肩关节后侧稳定性。", setup: "面向器械坐好，胸部贴靠垫，双手握住把手，调整座高使上臂与肩同高，肘部微屈固定。", steps: "呼气用后束发力将两侧把手向后水平展开至与肩同高或略后；吸气缓慢回放，全程保持后束张力。" },
+      { name: "蝴蝶机反向飞鸟", primary: "后束", secondary: "斜方中下 · 菱形", desc: "反向蝴蝶机（Reverse Pec Deck）是孤立后束与中背的经典器械，肘垫驱动完成肩关节水平外展。", setup: "反向坐在蝴蝶机上，胸部贴紧靠垫，双手握住把手或前臂贴住肘垫，调整座高使上臂接近水平。", steps: "呼气向后展开双臂至胸前打开、肩胛后收，顶峰收缩1秒；吸气缓慢回放，不要放松肩胛。" },
+      { name: "器械推肩", primary: "中束", secondary: "前束 · 三头", desc: "肩部推举机提供固定轨迹，孤立三角肌中前束且对核心要求低，适合大重量或收尾力竭。", setup: "调整座椅使把手起始位于肩部两侧、上臂接近水平；背部贴紧靠垫，双脚踩稳，全握把手。", steps: "呼气垂直向上推起至肘微屈，顶部不锁死；吸气缓慢下放至上臂接近水平，控制离心。" },
     ],
     "背": [
       { name: "高位下拉", primary: "背阔", secondary: "长头 · 上背", stabilizer: "握力", desc: "主要偏重背阔，使用器械完成。动作中优先保持可控的活动范围，不追求借力到位。", setup: "坐稳并让大腿压紧挡板，双脚踩稳；正握长杆且握距略宽于肩，躯干仅微微后倾。", steps: "肩胛下沉启动，将杆拉向上胸或锁骨附近，肘部指向地面；缓慢放回至手臂接近伸直但不耸肩。" },
-      { name: "杠铃划船", primary: "背阔", secondary: "斜方 · 竖脊", desc: "经典背部厚度动作，背阔肌和斜方肌中下部为主，竖脊肌等长收缩维持躯干稳定。", setup: "双脚与肩同宽站立，屈髋俯身约45度，背部平直，正握杠铃略宽于肩，手臂自然下垂。", steps: "呼气将杠铃沿大腿拉向下腹部，肘部贴近身体，顶峰收缩1秒；吸气缓慢下放至手臂伸直。" },
-      { name: "坐姿划船", primary: "背阔", secondary: "斜方 · 菱形", desc: "坐姿划船机提供稳定支撑，适合专注背部发力；V把或宽把各有侧重。", setup: "坐在划船机上，双脚踩稳踏板，膝盖微屈，双手握住把手，躯干挺直微微后仰。", steps: "呼气将把手拉向下腹部，肩胛后收，肘部贴近身体；吸气缓慢放回，保持躯干稳定不晃动。" },
-      { name: "引体向上", primary: "背阔", secondary: "肱二头 · 大圆", desc: "自重背部王牌动作，背阔肌宽度发展的最佳选择；需要一定上肢力量基础。", setup: "正握单杠，握距略宽于肩，手臂完全伸直悬挂，肩胛下沉。", steps: "呼气用背部发力将身体拉起至下巴过杠；吸气缓慢下放至手臂接近伸直，控制下落速度。" },
-      { name: "哑铃单臂划船", primary: "背阔", secondary: "斜方 · 后束", desc: "单侧训练可纠正左右不平衡，动作范围大，背阔肌拉伸和收缩更充分。", setup: "一手和同侧膝撑在平凳上，另一手持哑铃自然下垂，背部平直，核心收紧。", steps: "呼气将哑铃沿体侧拉向髋部，肘部贴近身体，顶峰收缩；吸气缓慢下放至背阔有拉伸感。" },
-      { name: "直臂下压", primary: "背阔", secondary: "三头 · 胸大", desc: "孤立背阔肌的动作，手臂保持伸直，完全靠肩关节伸展完成。", setup: "站在高位滑轮前，双手正握横杆，握距与肩同宽，手臂向前伸直，躯干微前倾。", steps: "呼气保持手臂伸直，将横杆向下压至大腿前侧；吸气缓慢放回至背阔有拉伸感。" },
-    ],
-    "肩": [
-      { name: "哑铃推举", primary: "中束", secondary: "前束 · 三头", desc: "肩部围度核心动作，三角肌中束为主；哑铃版本允许更自然的运动轨迹。", setup: "坐姿靠背或站姿，双手各持哑铃举至肩高，掌心朝前，肘部在手腕正下方。", steps: "呼气将哑铃垂直向上推起至手臂接近伸直但不锁死；吸气缓慢下放至耳侧水平。" },
-      { name: "侧平举", primary: "中束", secondary: "前束", desc: "三角肌中束孤立动作，肩部宽度的关键；小重量高次数效果更佳。", setup: "站姿或坐姿，双手各持哑铃置于体侧，掌心相对，肘部微屈。", steps: "呼气将哑铃向两侧举起至肩高，肘部略高于手腕；吸气缓慢下放至体侧，不要完全放松。" },
-      { name: "俯身侧平举", primary: "后束", secondary: "斜方 · 菱形", desc: "三角肌后束孤立动作，改善圆肩体态；俯身角度决定后束参与度。", setup: "屈髋俯身约45-90度，双手各持哑铃自然下垂，掌心相对，背部平直。", steps: "呼气将哑铃向两侧举起至与肩同高，想象用肘部引领；吸气缓慢下放，保持后束张力。" },
-      { name: "杠铃推举", primary: "中束", secondary: "前束 · 三头", desc: "站姿杠铃推举是上肢力量的经典指标，核心和下肢参与稳定。", setup: "站姿双脚与肩同宽，双手正握杠铃置于锁骨前，握距略宽于肩，核心收紧。", steps: "呼气将杠铃垂直向上推起至手臂伸直，头部微微前移让出轨迹；吸气缓慢下放至锁骨。" },
-      { name: "前平举", primary: "前束", secondary: "中束", desc: "三角肌前束孤立动作，可哑铃或杠铃完成；前束通常不需要太多额外训练。", setup: "站姿，双手持哑铃或杠铃置于大腿前侧，掌心朝下。", steps: "呼气将重量向前上方举起至肩高，手臂伸直但不锁死；吸气缓慢下放至起始位。" },
       { name: "绳索面拉", primary: "后束", secondary: "斜方 · 外旋", desc: "后束和肩袖肌群的康复性动作，改善肩关节健康；绳索提供持续张力。", setup: "将绳索调至面部高度，双手正握绳索两端，向后退一步，手臂向前伸直。", steps: "呼气将绳索拉向面部两侧，肘部高于手腕，外旋肩关节；吸气缓慢放回。" },
+      { name: "引体向上", primary: "背阔", secondary: "肱二头 · 大圆", desc: "自重背部王牌动作，背阔肌宽度发展的最佳选择；需要一定上肢力量基础。", setup: "正握单杠，握距略宽于肩，手臂完全伸直悬挂，肩胛下沉。", steps: "呼气用背部发力将身体拉起至下巴过杠；吸气缓慢下放至手臂接近伸直，控制下落速度。" },
+      { name: "坐姿划船", primary: "背阔", secondary: "斜方 · 菱形", desc: "坐姿划船机提供稳定支撑，适合专注背部发力；V把或宽把各有侧重。", setup: "坐在划船机上，双脚踩稳踏板，膝盖微屈，双手握住把手，躯干挺直微微后仰。", steps: "呼气将把手拉向下腹部，肩胛后收，肘部贴近身体；吸气缓慢放回，保持躯干稳定不晃动。" },
+      { name: "分动式划船机", primary: "背阔 · 中背", secondary: "斜方 · 肱二头", desc: "分动（独立）划船机让两侧手柄各自运动，轨迹更自然且能纠正左右不平衡；握把方向决定侧重背阔或中背。", setup: "调整座椅使把手起始位于手臂自然前伸的位置；胸部贴紧靠垫，双脚踩稳踏板，全握把手。", steps: "呼气肩胛后收带动肘部向后，将把手拉向体侧或下腹，顶峰收缩1秒；吸气缓慢回放至背部有拉伸感。" },
+      { name: "地雷管划船", primary: "背阔", secondary: "斜方 · 菱形 · 肱二头", desc: "地雷管（Landmine）一端固定、另一端可自由摆动，划船轨迹带自然弧度，对下背更友好且容易上手。", setup: "将杠铃一端插入地雷管底座（或用墙角固定），另一端装上负重；单手握住杠身靠近套筒处，对侧手可扶凳或撑膝。", steps: "屈髋俯身约45度、背部平直，呼气将杠铃沿体侧拉向髋部，肘部贴近身体；吸气缓慢下放至背阔有拉伸感，两侧交替。" },
+      { name: "坐姿绳索面拉", primary: "后束", secondary: "斜方 · 外旋", desc: "坐姿版本的绳索面拉，躯干更稳定、能更孤立地刺激后束与肩袖；适合肩部热身或收尾。", setup: "坐在凳上或坐于滑轮前，绳索调至面部高度，双手各握一端，手臂向前伸直，躯干保持直立。", steps: "呼气将绳索拉向面部两侧，肘部抬高于手腕并外旋肩关节，顶峰收缩1秒；吸气缓慢放回，避免耸肩。" },
+      { name: "颈后高位下拉", primary: "背阔", secondary: "大圆 · 斜方下", desc: "将杆拉向颈后，轨迹更强调背阔上部与大圆肌；对肩关节活动度要求较高，肩不适者慎用。", setup: "坐稳并让大腿压紧挡板，正握长杆略宽于肩，躯干保持直立、可微微前倾。", steps: "呼气将杆向下拉至颈后或斜方位置，肘部指向地面并下沉肩胛；吸气缓慢放回至手臂接近伸直，避免耸肩。" },
     ],
     "臂": [
-      { name: "杠铃弯举", primary: "肱二头", secondary: "前臂", desc: "肱二头肌经典动作，杠铃允许更大重量；直杠和曲杠对手腕压力不同。", setup: "站姿，双手反握杠铃与肩同宽，手臂自然下垂，肘部贴近体侧。", steps: "呼气屈肘将杠铃向上弯举至肩前，大臂保持不动；吸气缓慢下放至手臂接近伸直。" },
-      { name: "哑铃弯举", primary: "肱二头", secondary: "前臂", desc: "哑铃弯举允许旋转手腕，对肱二头肌刺激更全面；可交替或同时完成。", setup: "站姿或坐姿，双手各持哑铃置于体侧，掌心朝前，肘部贴近体侧。", steps: "呼气屈肘将哑铃向上弯举，可在上升过程中外旋手腕；吸气缓慢下放。" },
-      { name: "绳索下压", primary: "肱三头", secondary: "前臂", desc: "肱三头肌孤立动作，绳索提供持续张力；V把和直杆各有侧重。", setup: "站在高位滑轮前，双手握住绳索或直杆，肘部贴近体侧，前臂与地面平行。", steps: "呼气伸肘将把手向下压至手臂伸直；吸气缓慢放回至前臂与地面平行，大臂不动。" },
-      { name: "仰卧臂屈伸", primary: "肱三头", secondary: "前臂", desc: "俗称'碎颅者'，肱三头肌长头的经典动作；可用杠铃或哑铃完成。", setup: "仰卧平凳，双手持杠铃或哑铃举至胸部正上方，手臂伸直。", steps: "保持大臂垂直不动，屈肘将重量缓慢下放至额头附近；呼气伸肘将重量推回起始位。" },
-      { name: "锤式弯举", primary: "肱肌", secondary: "肱二头 · 前臂", desc: "锤式握法更侧重肱肌和肱桡肌，增加手臂整体厚度。", setup: "站姿，双手各持哑铃置于体侧，掌心相对（锤式握法）。", steps: "呼气屈肘将哑铃向上弯举，保持掌心相对；吸气缓慢下放。" },
-      { name: "窄距卧推", primary: "肱三头", secondary: "胸 · 前束", desc: "复合动作中肱三头肌参与度最高的卧推变式，可同时发展推力。", setup: "仰卧平凳，双手正握杠铃，握距窄于肩（约与肩同宽），手臂伸直将杠铃举至胸上方。", steps: "缓慢下放杠铃至下胸附近，肘部贴近身体；呼气将杠铃推回起始位。" },
+      { name: "二头弯举", primary: "肱二头", secondary: "肱肌 · 前臂", desc: "肱二头肌的基础弯举动作，可用杠铃或哑铃完成；核心是固定大臂、只靠屈肘发力。", setup: "站姿，双手反握杠铃（或持哑铃）与肩同宽，手臂自然下垂，肘部贴紧体侧，核心收紧。", steps: "呼气屈肘将重量向上弯举至肩前，大臂保持不动、手腕不借力；吸气缓慢下放至手臂接近伸直。" },
+      { name: "直臂下压", primary: "肱三头", secondary: "前臂", desc: "肱三头肌孤立动作，绳索或直杆提供持续张力；大臂固定是关键，避免用身体晃动借力。", setup: "站在高位滑轮前，双手握住绳索或直杆，肘部贴紧体侧，前臂与地面平行，躯干微前倾。", steps: "呼气伸肘将把手向下压至手臂伸直，底端可稍外分绳索；吸气缓慢放回至前臂与地面平行，大臂保持不动。" },
     ],
     "腿": [
-      { name: "杠铃深蹲", primary: "股四头", secondary: "臀大 · 核心", desc: "下肢力量之王，股四头肌为主，臀大肌和核心协同；深度和姿势比重量更重要。", setup: "将杠铃置于斜方肌上部（高杠）或三角肌后束（低杠），双脚与肩同宽或略宽，脚尖微外展。", steps: "屈髋屈膝同时下蹲至大腿与地面平行或更低，膝盖方向与脚尖一致；呼气伸髋伸膝站起。" },
-      { name: "腿举", primary: "股四头", secondary: "臀大 · 腘绳", desc: "腿举机提供固定轨迹，适合大重量训练；脚的位置决定股四头/臀部侧重。", setup: "坐在腿举机上，背部紧贴靠垫，双脚踩在踏板上与肩同宽，膝盖与脚尖方向一致。", steps: "缓慢屈膝下放至大腿接近小腿（不要过度弯曲）；呼气将踏板推回至膝盖微屈不锁死。" },
-      { name: "罗马尼亚硬拉", primary: "腘绳", secondary: "臀大 · 竖脊", desc: "腘绳肌和臀部的黄金动作，强调离心控制和髋部铰链；背部保持平直。", setup: "站姿，双手正握杠铃或哑铃置于大腿前侧，膝盖微屈，核心收紧。", steps: "保持膝盖角度不变，屈髋将重量沿大腿下放至小腿中部（腘绳有拉伸感）；呼气伸髋站起。" },
-      { name: "腿屈伸", primary: "股四头", secondary: "—", desc: "股四头肌孤立动作，适合热身或收尾；注意膝盖不要过度锁死。", setup: "坐在腿屈伸机上，调整靠背使膝盖对准转轴，脚背勾住滚垫。", steps: "呼气将小腿向上抬起至膝盖接近伸直但不锁死；吸气缓慢下放至起始位。" },
-      { name: "保加利亚分腿蹲", primary: "股四头", secondary: "臀大 · 核心", desc: "单侧下肢动作，纠正左右不平衡；对股四头和臀部刺激极强。", setup: "后脚脚背置于凳上，前脚向前跨出，双手可持哑铃或叉腰，躯干直立。", steps: "缓慢屈膝下蹲至前腿大腿与地面平行；呼气用前腿发力站起。" },
-      { name: "坐姿提踵", primary: "比目鱼", secondary: "腓肠", desc: "小腿训练基础动作，坐姿更侧重比目鱼肌；全程控制节奏。", setup: "坐在提踵机上，膝盖置于垫下，前脚掌踩在踏板上，脚跟悬空。", steps: "缓慢下放脚跟至小腿有拉伸感；呼气踮起脚尖至顶峰收缩。" },
+      { name: "坐姿腿屈伸", primary: "股四头", secondary: "—", desc: "股四头肌孤立动作，适合热身或收尾；注意膝盖不要过度锁死。", setup: "坐在腿屈伸机上，调整靠背使膝盖对准转轴，脚背勾住滚垫。", steps: "呼气将小腿向上抬起至膝盖接近伸直但不锁死；吸气缓慢下放至起始位。" },
+      { name: "保加利亚蹲", primary: "股四头", secondary: "臀大 · 核心", desc: "单侧下肢动作，纠正左右不平衡；对股四头和臀部刺激极强。", setup: "后脚脚背置于凳上，前脚向前跨出，双手可持哑铃或叉腰，躯干直立。", steps: "缓慢屈膝下蹲至前腿大腿与地面平行；呼气用前腿发力站起。" },
+      { name: "哈克深蹲", primary: "股四头", secondary: "臀大 · 内收", desc: "哈克深蹲机提供固定斜向轨迹，下背压力小于自由深蹲，可安全加载大重量刺激股四头。", setup: "背靠器械靠垫、双肩顶住肩垫，双脚踩在踏板上与肩同宽、脚尖微外展；解锁安全扣。", steps: "缓慢屈膝下放至大腿接近小腿，避免臀部过度离垫；呼气伸膝伸髋推起至膝微屈不锁死。" },
+      { name: "倒蹬机", primary: "股四头", secondary: "臀大 · 腘绳", desc: "腿举机（倒蹬机）提供固定轨迹，适合大重量训练；脚的位置决定股四头或臀部侧重。", setup: "坐在腿举机上，背部紧贴靠垫，双脚踩在踏板上与肩同宽，膝盖与脚尖方向一致。", steps: "缓慢屈膝下放至大腿接近小腿，不要过度弯曲；呼气将踏板推回至膝盖微屈不锁死。" },
+      { name: "坐姿腿弯举", primary: "腘绳", secondary: "小腿", desc: "腘绳肌孤立动作，与股四头训练配平；坐姿版本在髋屈位发力，对腘绳短头刺激更明显。", setup: "坐在腿弯举机上，调整靠背使膝盖对准转轴，脚跟勾住上方滚垫、大腿压紧下方垫子，双手握紧把手。", steps: "呼气屈膝将小腿向后下方勾至最大收缩，顶峰停顿1秒；吸气缓慢回放至膝盖接近伸直，保持张力。" },
+      { name: "髋内收", primary: "大腿内收肌", secondary: "臀中（协同）", desc: "髋内收机孤立训练大腿内侧肌群，改善髋部稳定与下肢力线，常作为臀腿日收尾。", setup: "坐在内收机上，双膝外侧贴住挡板，调整起始开合幅度至舒适范围，背部贴紧靠垫、双手握把。", steps: "呼气用大腿内侧发力将双膝向内夹拢至相触，顶峰收缩1秒；吸气缓慢张开至起始幅度，控制离心。" },
     ],
     "臀": [
-      { name: "臀桥", primary: "臀大", secondary: "腘绳 · 核心", desc: "臀部激活和基础力量动作，适合初学者或作为热身；可徒手或负重。", setup: "仰卧，双脚平放地面与髋同宽，膝盖弯曲约90度，手臂置于体侧。", steps: "呼气伸髋将臀部抬离地面至肩-膝成一直线，顶峰收缩臀部1秒；吸气缓慢下放。" },
-      { name: "杠铃臀推", primary: "臀大", secondary: "腘绳 · 核心", desc: "臀部围度增长的王牌动作，可加载大重量；上背靠在凳上增加稳定性。", setup: "上背部靠在平凳边缘，杠铃置于髋部（可用垫子缓冲），双脚平放地面。", steps: "呼气伸髋将杠铃向上推至肩-膝成一直线，顶峰收缩；吸气缓慢下放至臀部接近地面。" },
-      { name: "硬拉", primary: "臀大", secondary: "腘绳 · 竖脊 · 握力", desc: "全身性复合动作，后链肌群整体发展；传统硬拉从地面启动，技术要求高。", setup: "站姿，杠铃贴近小腿，双手正握或正反握杠铃，背部平直，核心收紧。", steps: "伸髋伸膝将杠铃沿身体拉起至站直；缓慢下放至地面，保持背部平直。" },
-      { name: "跪姿后踢腿", primary: "臀大", secondary: "核心", desc: "臀部孤立动作，适合激活和塑形；可用弹力带或绳索增加阻力。", setup: "跪姿，双手撑地，背部平直，核心收紧。", steps: "呼气将一条腿向后上方抬起至臀部收紧，膝盖可微屈；吸气缓慢下放。" },
-      { name: "侧步走", primary: "臀中", secondary: "臀小 · 稳定", desc: "弹力带侧步走是臀中肌的经典激活动作，改善髋部稳定性。", setup: "将弹力带套在膝盖上方或脚踝处，微屈髋屈膝，半蹲姿势。", steps: "保持半蹲姿势，向侧方迈步，感受臀中肌发力；控制速度，不要弹动。" },
+      { name: "山羊挺身", primary: "竖脊 · 臀大", secondary: "腘绳", desc: "罗马椅/山羊挺身以后链（竖脊肌、臀大肌、腘绳肌）为主，是强化下背与臀部的基础动作。", setup: "调整罗马椅使髋部卡在垫子上沿、身体可自由前屈；双脚固定，双手可抱胸或持哑铃于胸前。", steps: "呼气伸髋伸背将上身抬至与下肢成一直线，不要过度后仰，顶峰收缩臀部与下背1秒；吸气缓慢前屈回落。" },
+      { name: "髋外展", primary: "臀中 · 臀小", secondary: "阔筋膜张肌", desc: "髋外展机孤立训练臀中肌与臀小肌，改善髋部稳定性与臀型外缘，常作激活或收尾。", setup: "坐在外展机上，双膝内侧贴住挡板，调整起始幅度，背部贴紧靠垫、双手握把。", steps: "呼气用臀部外侧发力将双膝向外展开至最大，顶峰收缩1秒；吸气缓慢并拢至起始，控制离心。" },
     ],
     "有氧": [
       { name: "跑步机", primary: "心肺", secondary: "下肢", desc: "最基础的有氧设备，可调节速度和坡度；坡度走对膝盖更友好。", setup: "站在跑步机两侧踏板上，启动后缓慢踏上跑带。", steps: "从慢速开始逐渐增加至目标速度；保持躯干直立，自然摆臂。" },
       { name: "椭圆机", primary: "心肺", secondary: "下肢 · 核心", desc: "零冲击有氧，对关节友好；手脚并用的全身运动。", setup: "双手握住把手，双脚踩在踏板上。", steps: "保持躯干直立，手脚协调配合做椭圆运动；可调节阻力和坡度增加强度。" },
-      { name: "划船机", primary: "心肺", secondary: "背 · 腿 · 核心", desc: "全身参与度最高的有氧设备之一，腿部驱动+背部拉桨。", setup: "坐在划船机上，双脚固定在踏板上，双手握住把手。", steps: "腿部先发力蹬伸，然后躯干后仰，最后手臂拉桨；回放时顺序相反。" },
-      { name: "跳绳", primary: "心肺", secondary: "小腿 · 协调", desc: "高效燃脂的便携有氧运动，对协调性和小腿力量有一定要求。", setup: "双手握住跳绳手柄，绳长调至腋下高度。", steps: "用手腕摇绳而非手臂，前脚掌着地保持弹性；可从双脚跳逐渐过渡到单脚或交叉跳。" },
-      { name: "波比跳", primary: "心肺", secondary: "全身", desc: "高强度全身动作，结合深蹲、俯卧撑和跳跃，燃脂效率极高。", setup: "站姿，双脚与肩同宽。", steps: "下蹲双手撑地→后跳成平板→俯卧撑→前跳回蹲姿→垂直跳起；连贯完成。" },
+      { name: "划船机", primary: "心肺", secondary: "背 · 腿 · 核心", desc: "全身参与度最高的有氧设备之一，腿部驱动加背部拉桨。", setup: "坐在划船机上，双脚固定在踏板上，双手握住把手。", steps: "腿部先发力蹬伸，然后躯干后仰，最后手臂拉桨；回放时顺序相反。" },
     ],
   };
 
@@ -311,7 +301,7 @@
     TRAIN_PARTS.forEach((p) => {
       if (!ft.actions[p] || ft.actions[p].length === 0) {
         const db = EXERCISE_DB[p] || [];
-        ft.actions[p] = db.slice(0, 3).map((e) => ({ name: e.name, maxWeight: 0, sets: 0 }));
+        ft.actions[p] = db.slice().map((e) => ({ name: e.name, maxWeight: 0, sets: 0 }));
       }
     });
   }
@@ -933,7 +923,7 @@
   function quickWeightModal() {
     openModal("记录体重", `
       <div class="form form-2">
-        <div class="fld"><label>日期</label><input type="date" id="qwDate" value="${todayStr()}"></div>
+        <div class="fld"><label>日期</label><input type="date" id="qwDate" value="${effectiveToday()}"></div>
         <div class="fld"><label>体重 kg</label><input type="number" id="qwW" step="0.1" placeholder="0"></div>
         <div class="fld"><label>体脂 %</label><input type="number" id="qwF" step="0.1" placeholder="0"></div>
         <div class="fld"><label>肌肉 %</label><input type="number" id="qwM" step="0.1" placeholder="0"></div>
@@ -949,13 +939,13 @@
     };
   }
   function punchNow(key) {
-    const t = todayStr(); punchRec(t).times[key] = nowHM(); save(); renderPunch(); renderOverview();
+    const t = effectiveToday(); punchRec(t).times[key] = nowHM(); save(); renderPunch(); renderOverview();
     const st = PUNCH_STEPS.find((s) => s.key === key);
     toast("已记录 " + (st ? st.label : key) + " " + nowHM());
   }
   // 一键工作流：弹窗选段次 + 时间，写入对应段，自动同步到打卡界面
   function punchModal() {
-    const t = todayStr(); const tm = (punchRec(t).times) || {};
+    const t = effectiveToday(); const tm = (punchRec(t).times) || {};
     let sel = null;
     const segs = PUNCH_STEPS.map((s) => `<button class="pseg" data-seg="${s.key}"><div class="pseg-ic">${s.emoji}</div><div class="pseg-l">${s.label}</div><div class="pseg-t">${tm[s.key] || "未打卡"}</div></button>`).join("");
     openModal("打卡", `
@@ -1623,7 +1613,7 @@
 
   function addMealModal(mealKey) {
     const m = MEALS.find((x) => x.k === mealKey);
-    const md = curMealDate || todayStr();
+    const md = curMealDate || effectiveToday();
     openModal(`添加${m.name} · ${md.slice(5)}`, `
       <div class="card-sub mb-2">粘贴餐食描述自动识别，或手动填写营养：</div>
       <div class="fld full"><label>智能识别</label><textarea id="smart" placeholder="粘贴豆包等营养素分析，自动识别：辣椒炒肉50g… 总热量：814 碳水：45.2 蛋白质：38.1 脂肪：22.4 胆固醇：210 嘌呤：180"></textarea></div>
@@ -1727,7 +1717,7 @@
   /* ============ 渲染：健身 ============ */
   let calY = new Date().getFullYear(), calM = new Date().getMonth();
   function renderFitness() {
-    const ft = D.fitness; const t = todayStr();
+    const ft = D.fitness; const t = effectiveToday();
 
     $("#body-fitness").innerHTML = `
       <div class="mt-3" id="trainSections"></div>
@@ -1743,7 +1733,7 @@
 
   /* 可复用的日历渲染（健身页 & 总览日历侧边栏共用） */
   function drawCalendar(gridId, titleId) {
-    const ft = D.fitness; const t = todayStr();
+    const ft = D.fitness; const t = effectiveToday();
     $("#" + titleId).textContent = `${calY}年${calM + 1}月`;
     const first = new Date(calY, calM, 1); const start = (first.getDay() + 6) % 7; const days = new Date(calY, calM + 1, 0).getDate();
     let g = ""; for (let i = 0; i < start; i++) g += `<div class="cal-cell other"></div>`;
@@ -1820,7 +1810,7 @@
       return `<span style="color:#64748b;">→ 0</span>`;
     };
 
-    const t = todayStr();
+    const t = effectiveToday();
     const wForm = `
       <div class="form form-3">
         <div class="fld"><label>日期</label><input type="date" id="wDate" value="${t}"></div>
@@ -2048,7 +2038,7 @@
       if (act === "inc") { ft.actions[p][i].sets = (ft.actions[p][i].sets || 0) + 1; }
       else if (act === "reset") { ft.actions[p][i].sets = 0; }
       else if (act === "del") { ft.actions[p].splice(i, 1); }
-      const t = todayStr(); const tEntry = ft.calendar[t] || { parts: [] };
+      const t = effectiveToday(); const tEntry = ft.calendar[t] || { parts: [] };
       if (act === "inc" && !tEntry.parts.includes(p)) { tEntry.parts.push(p); ft.calendar[t] = tEntry; }
       save(); renderTrainSections(); renderOverview(); renderTrainLog();
     });
@@ -2061,21 +2051,40 @@
   /* ============ 动作详情弹窗 ============ */
   /* 动作名 → GIF 映射（已生成的像素猫动图） */
   const EXERCISE_GIF = {
+    /* 已生成（直接复用） */
     "史密斯卧推": "exercise-gifs/smith_bench.gif",
     "蝴蝶机夹胸": "exercise-gifs/butterfly_fly.gif",
-    "坐姿推胸机": "exercise-gifs/seated_press.gif",
-    "上斜杠铃卧推": "exercise-gifs/incline_bench.gif",
+    "器械推胸": "exercise-gifs/seated_press.gif",
     "高位下拉": "exercise-gifs/lat_pulldown.gif",
-    "平板哑铃卧推": "exercise-gifs/db_bench_press.gif",
-    "杠铃划船": "exercise-gifs/barbell_row.gif",
-    "哑铃推举": "exercise-gifs/db_shoulder_press.gif",
-    "杠铃弯举": "exercise-gifs/barbell_curl.gif",
-    "杠铃深蹲": "exercise-gifs/barbell_squat.gif",
-    "绳索夹胸": "exercise-gifs/cable_fly.gif",
     "坐姿划船": "exercise-gifs/seated_row.gif",
-    "侧平举": "exercise-gifs/lateral_raise.gif",
-    "绳索下压": "exercise-gifs/cable_pushdown.gif",
-    "罗马尼亚硬拉": "exercise-gifs/rdl.gif",
+    "绳索面拉": "exercise-gifs/face_pull.gif",
+    "坐姿绳索面拉": "exercise-gifs/face_pull.gif",
+    "引体向上": "exercise-gifs/pullup.gif",
+    "二头弯举": "exercise-gifs/barbell_curl.gif",
+    "直臂下压": "exercise-gifs/cable_pushdown.gif",
+    "坐姿腿屈伸": "exercise-gifs/leg_extension.gif",
+    "保加利亚蹲": "exercise-gifs/bulgarian_split.gif",
+    "倒蹬机": "exercise-gifs/leg_press.gif",
+    "跑步机": "exercise-gifs/treadmill.gif",
+    "椭圆机": "exercise-gifs/elliptical.gif",
+    "划船机": "exercise-gifs/rowing_machine.gif",
+    /* 待生成（生成后取消注释即可） 
+    "史密斯推胸": "exercise-gifs/smith_chest_press.gif",
+    "坐姿下斜推胸": "exercise-gifs/decline_press.gif",
+    "坐姿上斜推胸": "exercise-gifs/incline_press.gif",
+    "分动挂片卧推": "exercise-gifs/plate_bench_press.gif",
+    "器械飞鸟": "exercise-gifs/machine_fly.gif",
+    "蝴蝶机反向飞鸟": "exercise-gifs/reverse_pec_deck.gif",
+    "器械推肩": "exercise-gifs/shoulder_press_machine.gif",
+    "分动式划船机": "exercise-gifs/converging_row.gif",
+    "地雷管划船": "exercise-gifs/landmine_row.gif",
+    "颈后高位下拉": "exercise-gifs/behind_neck_pulldown.gif",
+    "哈克深蹲": "exercise-gifs/hack_squat.gif",
+    "坐姿腿弯举": "exercise-gifs/seated_leg_curl.gif",
+    "髋内收": "exercise-gifs/hip_adduction.gif",
+    "髋外展": "exercise-gifs/hip_abduction.gif",
+    "山羊挺身": "exercise-gifs/back_extension.gif",
+    */
   };
 
   function exerciseDetailModal(part, idx) {
@@ -2129,7 +2138,7 @@
   }
 
   function renderTrainLog() {
-    const t = todayStr(); const e = D.fitness.calendar[t];
+    const t = effectiveToday(); const e = D.fitness.calendar[t];
     let html = "";
     if (e && e.parts.length) {
       const parts = e.parts.join("·");
@@ -2239,7 +2248,7 @@
           </div>
         </div>
         <div class="form form-3">
-          <div class="fld"><label>日期</label><input type="date" id="tDate" value="${todayStr()}"></div>
+          <div class="fld"><label>日期</label><input type="date" id="tDate" value="${effectiveToday()}"></div>
           <div class="fld"><label>类型</label><select id="tType"><option value="expense">支出</option><option value="income">收入</option></select></div>
           <div class="fld"><label>分类</label><select id="tCat"></select></div>
           <div class="fld"><label>金额</label><input type="number" id="tAmt" step="0.01" placeholder="0.00"></div>
@@ -2255,7 +2264,7 @@
         <div class="card-head"><div class="card-title">本月非必要性开支 💸</div><div class="tag tag-rose">每月 1 日 0:00 清空</div></div>
         <div class="friv-total"><span class="num">${MM(frivT)}</span><span class="friv-sub">${frivC} 笔 · ${frivM.replace("-", "年")}月</span></div>
         <div class="form form-3">
-          <div class="fld"><label>日期</label><input type="date" id="frDate" value="${todayStr()}"></div>
+          <div class="fld"><label>日期</label><input type="date" id="frDate" value="${effectiveToday()}"></div>
           <div class="fld"><label>买了啥</label><input id="frNote" placeholder="奶茶 / 盲盒 / 随便花"></div>
           <div class="fld"><label>花了多少</label><input id="frAmt" type="number" step="0.01" placeholder="0.00"></div>
         </div>
@@ -2360,7 +2369,7 @@
       const cats = qChips(type);
       const selAcct = accts()[0] || "现金";
       $("#modalBody").innerHTML = `
-        <div class="card-sub mb-2">快速记一笔 · ${todayStr()}</div>
+        <div class="card-sub mb-2">快速记一笔 · ${effectiveToday()}</div>
         <div style="display:flex;gap:8px;margin-bottom:12px;">
           <button class="btn btn-sm ${type === "expense" ? "btn-primary" : "btn-ghost"}" data-qt="expense" style="flex:1;">📉 支出</button>
           <button class="btn btn-sm ${type === "income" ? "btn-primary" : "btn-ghost"}" data-qt="income" style="flex:1;">📈 收入</button>
@@ -2375,7 +2384,7 @@
           <div class="fld"><label>账户</label><select id="qtAcct">${accts().map((a) => `<option>${esc(a)}</option>`).join("")}</select></div>
         </div>
         <div class="form form-2 mt-2">
-          <div class="fld"><label>日期</label><input id="qtDate" type="date" value="${todayStr()}"></div>
+          <div class="fld"><label>日期</label><input id="qtDate" type="date" value="${effectiveToday()}"></div>
           <div class="fld"><label>备注</label><input id="qtNote" placeholder="可选"></div>
         </div>
         <div style="display:flex;gap:8px;margin-top:12px;">
@@ -2702,7 +2711,7 @@
   function nowHM() { const d = new Date(); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
   function renderPunch() {
     D.punch = D.punch || {};
-    const t = todayStr(); const d = new Date(); const wd = d.getDay(); const weekend = wd === 0 || wd === 6;
+    const t = effectiveToday(); const d = new Date(); const wd = d.getDay(); const weekend = wd === 0 || wd === 6;
     const rec = punchRec(t); const tm = rec.times || {};
     const nm = toMin(nowHM());
     const statusOf = (st) => {
