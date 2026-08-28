@@ -152,8 +152,14 @@
     toast("已记一笔乱花 💸");
   }
   /* ============ 每日数据自动重置（凌晨 3 点生效） ============ */
-  // 记录上次重置的日期（格式：YYYY-MM-DD），用于检测跨天
-  let _lastRolloverDate = null;
+  // 上次重置日期持久化到 localStorage（独立 key），这样页面刷新/重开也能正确判断跨天
+  const ROLLOVER_KEY = "tlr_rollover_date";
+  function getLastRolloverDate() {
+    try { return localStorage.getItem(ROLLOVER_KEY) || null; } catch (e) { return null; }
+  }
+  function setLastRolloverDate(d) {
+    try { localStorage.setItem(ROLLOVER_KEY, d); } catch (e) {}
+  }
 
   /**
    * 获取"有效的今天"——如果当前时间 < 3:00，则视为"昨天"还在继续
@@ -172,23 +178,21 @@
    * 每日数据重置函数
    * 检测是否跨过凌晨 3 点，如果是则：
    * 1. 清空饮水记录
-   * 2. 重置待办事项（未完成的保留，已完成的清除）
+   * 2. 清除已完成的待办（未完成的保留，代表"还没做完"）
    *
    * @returns {boolean} 是否发生了重置
    */
   function dailyRollover() {
     const effToday = effectiveToday();
+    const prevDate = getLastRolloverDate();
 
-    // 如果已经重置过今天的，跳过
-    if (_lastRolloverDate === effToday) return false;
+    // 首次使用：记录今天的日期，不清理
+    if (!prevDate) {
+      setLastRolloverDate(effToday);
+      return false;
+    }
 
-    const prevDate = _lastRolloverDate;
-    _lastRolloverDate = effToday;
-
-    // 首次加载时不重置（除非检测到日期确实变了）
-    if (!prevDate) return false;
-
-    // 检测是否真的跨天了
+    // 今天已经处理过，跳过
     if (prevDate === effToday) return false;
 
     console.log(`[DailyRollover] 检测到新的一天：${prevDate} → ${effToday}，执行数据重置...`);
@@ -202,7 +206,7 @@
       console.log('[DailyRollover] ✓ 已清空昨日饮水记录');
     }
 
-    // 2. 处理待办事项：清除已完成的，未完成的保留
+    // 2. 处理待办事项：清除已完成的（打勾的），未完成的（没打勾的）保留
     if (D.profile && D.profile.todos && D.profile.todos.length > 0) {
       const prevLen = D.profile.todos.length;
       D.profile.todos = D.profile.todos.filter(t => !t.done);
@@ -211,6 +215,9 @@
         console.log(`[DailyRollover] ✓ 已清除已完成待办：${prevLen} → ${D.profile.todos.length} 条`);
       }
     }
+
+    // 更新标记日期（无论是否 changed 都要更新，避免反复触发）
+    setLastRolloverDate(effToday);
 
     // 3. 保存并提示
     if (changed) {
