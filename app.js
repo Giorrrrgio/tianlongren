@@ -773,10 +773,16 @@
   function loadExternalScript(src) {
     return new Promise((resolve, reject) => {
       const s = document.createElement("script");
-      s.src = src; s.onload = resolve; s.onerror = () => reject(new Error("脚本加载失败"));
+      s.src = src; s.onload = resolve; s.onerror = () => reject(new Error("脚本加载失败: " + src));
       document.head.appendChild(s);
     });
   }
+  // Tesseract.js CDN 多源 fallback（国内访问 jsdelivr 可能慢/被墙）
+  const TESSERACT_CDNS = [
+    "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js",
+    "https://unpkg.com/tesseract.js@5/dist/tesseract.min.js",
+    "https://esm.sh/tesseract.js@5/dist/tesseract.min.js",
+  ];
   // 懒加载 Tesseract.js 并创建识别 worker（chi_sim 中文 + eng 数字）
   let __tessPromise = null;
   async function ensureTesseract() {
@@ -784,7 +790,11 @@
     if (!__tessPromise) {
       __tessPromise = (async () => {
         if (!window.Tesseract) {
-          await loadExternalScript("https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js");
+          let lastErr = null;
+          for (const src of TESSERACT_CDNS) {
+            try { await loadExternalScript(src); if (window.Tesseract) break; } catch (e) { lastErr = e; }
+          }
+          if (!window.Tesseract) throw lastErr || new Error("Tesseract.js 加载失败（所有 CDN 均不可用）");
         }
         window.__tessWorker = await window.Tesseract.createWorker("chi_sim+eng");
         return window.__tessWorker;
@@ -793,36 +803,39 @@
     try { await __tessPromise; } catch (e) { __tessPromise = null; throw e; }
     return window.__tessWorker;
   }
-  // 图像预处理：深色背景秤截图 → 反色 + 二值化，大幅提高 OCR 准确率
-  // （Tesseract 对「浅色背景深色文字」效果最好，而体脂秤 APP 多为深色背景白字）
+  // 图像预处理：仅对深色背景反色，浅色背景原样，统
+  // 一放大提升小字识别率。不做全局二值化（会把秤截图
+  // 的数字小数点/笔画细节破坏掉，得不偿失）。
   function preprocessScaleImage(file) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
       const img = new Image();
       img.onload = () => {
         try {
-          const canvas = document.createElement("canvas");
-          // 适当放大提升小字识别率（最长边到 1600px）
-          const scale = Math.min(2, 1600 / Math.max(img.width, img.height)) || 1;
-          canvas.width = Math.round(img.width * (scale > 1 ? scale : 1));
-          canvas.height = Math.round(img.height * (scale > 1 ? scale : 1));
-          const ctx = canvas.getContext("2d");
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const d = id.data;
-          // 1) 计算平均亮度，判断是否深色背景
+          // 1) 先用小尺寸采样判断背景深浅，避免遍历大图
+          const sample = document.createElement("canvas");
+          sample.width = 100;
+          sample.height = Math.max(1, Math.round((img.height / img.width) * 100));
+          const sctx = sample.getContext("2d", { willReadFrequently: true });
+          sctx.drawImage(img, 0, 0, sample.width, sample.height);
+          const sid = sctx.getImageData(0, 0, sample.width, sample.height).data;
           let sum = 0;
-          for (let i = 0; i < d.length; i += 4) sum += (d[i] + d[i + 1] + d[i + 2]) / 3;
-          const avg = sum / (d.length / 4);
-          const invert = avg < 128; // 深色背景需要反色
-          // 2) 反色（如需）+ 二值化增强对比度
-          for (let i = 0; i < d.length; i += 4) {
-            let g = (d[i] + d[i + 1] + d[i + 2]) / 3;
-            if (invert) g = 255 - g;
-            g = g > 140 ? 255 : 0; // 二值化
-            d[i] = d[i + 1] = d[i + 2] = g;
+          for (let i = 0; i < sid.length; i += 4) sum += (sid[i] + sid[i + 1] + sid[i + 2]) / 3;
+          const avg = sum / (sid.length / 4);
+          const isDark = avg < 128;
+
+          // 2) 主 canvas：放大到长边约 2200px，提升小字识别率
+          const scale = Math.max(1.6, 2200 / Math.max(img.width, img.height));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          const ctx = canvas.getContext("2d", { willReadFrequently: true });
+          if (isDark) {
+            // 深色背景：反色（Tesseract 偏好浅底深字）
+            ctx.filter = "invert(1)";
           }
-          ctx.putImageData(id, 0, 0);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          ctx.filter = "none";
           URL.revokeObjectURL(url);
           resolve(canvas);
         } catch (err) { URL.revokeObjectURL(url); reject(err); }
@@ -831,55 +844,153 @@
       img.src = url;
     });
   }
-  // 从 OCR 文本提取四个指标：体重、体脂率、肌肉率、体水份量
-  function extractBodyFromOCR(text) {
-    const t = (text || "").replace(/\s+/g, " ");
-    const out = { weight: null, fatRate: null, muscleRate: null, waterMass: null };
-    // 定位关键词：关键词前取「最后一个」数字+单位（对应"值 kg 标签"格式），
-    // 关键词后取「第一个」（兜底，对应"体重"这类标签在前的场景）
-    const numNear = (kw, unit) => {
-      const kwEsc = kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const km = t.match(new RegExp(kwEsc, "i"));
-      if (!km) return null;
-      const kwIdx = km.index;
-      const before = t.slice(Math.max(0, kwIdx - 22), kwIdx);
-      const after = t.slice(kwIdx + kw.length, kwIdx + kw.length + 22);
-      const numRe = new RegExp("(\\d+(?:\\.\\d+)?)\\s*" + unit, "gi");
-      let m, beforeLast = null;
-      while ((m = numRe.exec(before)) !== null) { beforeLast = m[1]; }
-      if (beforeLast != null) return parseFloat(beforeLast);
-      numRe.lastIndex = 0;
-      const am = numRe.exec(after);
-      return am ? parseFloat(am[1]) : null;
-    };
-    // 体脂率：关键词匹配，但必须在 <50% 范围（体脂率一般 <50%）
-    let fr = numNear("体脂率", "%") || numNear("体脂", "%");
-    if (fr != null && fr < 50) out.fatRate = fr;
-    // 肌肉率：关键词匹配，但必须 >=50%（肌肉率一般 >50%）
-    let mr = numNear("肌肉率", "%");
-    if (mr != null && mr >= 50) out.muscleRate = mr;
-    // 体水份量（kg）——注意秤上写作「体水分量」
-    out.waterMass = numNear("体水分量", "kg") || numNear("体水份量", "kg") || numNear("水分量", "kg");
-    // 体重（kg）：优先「体重」关键词，否则取所有 kg 数字中最大的（体重一般 > 肌肉量/水份量）
-    let w = numNear("体重", "kg");
-    if (w == null) {
-      const kgNums = []; const re = /(\d+(?:\.\d+)?)\s*kg/gi; let m;
-      while ((m = re.exec(t)) !== null) { const v = parseFloat(m[1]); if (v >= 20 && v <= 300) kgNums.push(v); }
-      const cand = kgNums.filter((v) => v !== out.waterMass);
-      if (cand.length) w = Math.max(...cand);
+  // 从 canvas 裁剪顶部 0~ratio 区域，返回新 canvas
+  function cropCanvasTop(srcCanvas, ratio) {
+    const cropH = Math.round(srcCanvas.height * ratio);
+    const c = document.createElement("canvas");
+    c.width = srcCanvas.width; c.height = cropH;
+    const cx = c.getContext("2d");
+    cx.drawImage(srcCanvas, 0, 0, srcCanvas.width, cropH, 0, 0, srcCanvas.width, cropH);
+    return c;
+  }
+  // 从顶部 OCR 结果中提取体重（聚焦识别大字号 66.2 这种）
+  function extractWeightFromTop(text, lines, imgHeight) {
+    if (!lines || !imgHeight) {
+      // 纯文本兜底
+      const m = (text || "").match(/(\d{2,3}(?:\.\d+)?)/);
+      if (m) {
+        const v = parseFloat(m[1]);
+        if (v >= 45 && v <= 300) return v;
+      }
+      return null;
     }
-    out.weight = w;
+    const nums = [];
+    for (const l of lines) {
+      if (!l.text) continue;
+      const re = /(\d{1,3}(?:\.\d+)?)\s*([a-zA-Z%‰¢kKgGqQxXø]?)/g;
+      let m;
+      while ((m = re.exec(l.text)) !== null) {
+        const v = parseFloat(m[1]);
+        if (!isNaN(v) && v >= 45 && v <= 300) nums.push(v);
+      }
+    }
+    if (!nums.length) return null;
+    // 取最大（体重通常是顶部最大数字）
+    return Math.max(...nums);
+  }
+  // 从 OCR 文本 + 行坐标提取四个指标：体重、体脂率、肌肉率、体水份量
+  // 核心思路：秤截图 OCR 经常丢单位（kg→g/k/q，%→%/x/¢/‰），所以
+  //   1) 每个数字带 (值, 单位) 一起提取
+  //   2) 行级定位 + 关键词模糊匹配（OCR 会把「体脂率」打成「体 脂 率」）
+  //   3) 数值范围 + 单位字符双重过滤
+  //   4) 「除以 10」启发式（OCR 把 77.9% 打成 779x 时可纠正）
+  function extractBodyFromOCR(text, lines, imgHeight) {
+    const out = { weight: null, fatRate: null, muscleRate: null, waterMass: null };
 
-    /* ---- 数字兜底：关键词识别不全时，用纯数字启发式补充 ---- */
-    // 收集所有 % 和 kg 数字（合理范围）
-    const pctNums = []; { const re = /(\d+(?:\.\d+)?)\s*%/g; let m; while ((m = re.exec(t)) !== null) { const v = parseFloat(m[1]); if (v > 0 && v < 100) pctNums.push(v); } }
-    const allKg = []; { const re = /(\d+(?:\.\d+)?)\s*kg/gi; let m; while ((m = re.exec(t)) !== null) { const v = parseFloat(m[1]); if (v >= 2 && v <= 300) allKg.push(v); } }
-    // 体脂率：缺失时取 <50% 的（体脂率一般 <50%）
-    if (out.fatRate == null && pctNums.length) { const small = pctNums.filter((v) => v < 50); if (small.length) out.fatRate = small[0]; }
-    // 肌肉率：缺失时取 >=50% 的（肌肉率一般 >50%）
-    if (out.muscleRate == null && pctNums.length) { const big = pctNums.filter((v) => v >= 50); if (big.length) out.muscleRate = big[0]; }
-    // 体重：缺失时取最大 kg
-    if (out.weight == null && allKg.length) { const cand = allKg.filter((v) => v !== out.waterMass); if (cand.length) out.weight = Math.max(...cand); }
+    // 工具：提取 (值, 单位字符) 列表
+    const extractTokens = (s) => {
+      if (!s) return [];
+      const re = /(\d{1,3}(?:\.\d+)?)\s*([a-zA-Z%‰¢kKgGqQxXø]?)/g;
+      const arr = []; let m;
+      while ((m = re.exec(s)) !== null) {
+        const v = parseFloat(m[1]);
+        if (!isNaN(v)) arr.push({ v, u: m[2] });
+      }
+      return arr;
+    };
+    const isPct = (u) => ["%", "‰", "¢", "q", "x", "X", "ø"].includes(u);
+    const isKg = (u) => ["kg", "k", "g", "K", "G"].includes(u);
+
+    // 工具：行级 + 关键词 + 范围 + 单位过滤
+    const findByKw = (rows, kws, range, unitFilter) => {
+      const tryRow = (row) => {
+        const cand = row.tokens.filter((t) => t.v >= range[0] && t.v <= range[1] && (!unitFilter || unitFilter(t.u)));
+        if (cand.length) return cand[cand.length - 1].v;
+        // 除以 10 启发式（OCR 把 77.9% 打成 779x 时）
+        const cand10 = row.tokens.filter((t) => {
+          if (unitFilter && !unitFilter(t.u)) return false;
+          const v10 = t.v / 10;
+          return v10 >= range[0] && v10 <= range[1];
+        });
+        if (cand10.length) return cand10[cand10.length - 1].v / 10;
+        return null;
+      };
+      for (const kw of kws) {
+        for (let i = 0; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r.textFlat.includes(kw)) continue;
+          let v = tryRow(r); if (v != null) return v;
+          if (i > 0) { v = tryRow(rows[i - 1]); if (v != null) return v; }
+          if (i + 1 < rows.length) { v = tryRow(rows[i + 1]); if (v != null) return v; }
+        }
+      }
+      return null;
+    };
+
+    // ===== 第 1 层：基于 Tesseract lines 的行级空间提取 =====
+    if (lines && imgHeight) {
+      const rows = lines
+        .filter((l) => l.text && l.text.trim())
+        .map((l) => ({
+          y: ((l.bbox.y0 + l.bbox.y1) / 2) / imgHeight,
+          text: l.text.trim(),
+          textFlat: l.text.replace(/\s+/g, ""),
+          tokens: extractTokens(l.text),
+        }));
+
+      // 体脂率（5~50，% 类单位优先）
+      out.fatRate = findByKw(rows, ["体脂率", "体脂", "脂率"], [5, 50], isPct);
+      // 肌肉率（50~100，% 类单位）
+      out.muscleRate = findByKw(rows, ["肌肉率"], [50, 100], isPct);
+      // 体水份量（25~65，kg 类单位优先；无单位兜底）
+      out.waterMass = findByKw(rows, ["体水分量", "体水份量", "水分量", "水分"], [25, 65], isKg)
+        || findByKw(rows, ["体水分量", "体水份量", "水分量", "水分"], [25, 65]);
+      // 体重：含「体重」关键词 OR 顶部最大数字 45~300
+      out.weight = findByKw(rows, ["体重"], [45, 300], isKg)
+        || findByKw(rows, ["体重"], [45, 300]);
+      if (out.weight == null) {
+        const topRows = rows.filter((r) => r.y < 0.35);
+        const cand = topRows.flatMap((r) => r.tokens).filter((t) => t.v >= 45 && t.v <= 300);
+        if (cand.length) out.weight = Math.max(...cand.map((t) => t.v));
+      }
+    }
+
+    // ===== 第 2 层：纯文本兜底（关键词匹配 + 数值范围启发式） =====
+    const tFlat = (text || "").replace(/\s+/g, "");
+    const tRows = [{ textFlat: tFlat, tokens: extractTokens(text || "") }];
+
+    if (out.fatRate == null) {
+      let fr = findByKw(tRows, ["体脂率", "体脂", "脂率"], [5, 50], isPct);
+      if (fr == null) {
+        const small = tRows[0].tokens.filter((x) => x.v > 5 && x.v < 50);
+        if (small.length) fr = small[0].v;
+      }
+      if (fr != null && fr < 50) out.fatRate = fr;
+    }
+    if (out.muscleRate == null) {
+      let mr = findByKw(tRows, ["肌肉率"], [50, 100], isPct);
+      if (mr == null) {
+        const big = tRows[0].tokens.filter((x) => x.v >= 50 && x.v < 100);
+        if (big.length) mr = big[0].v;
+      }
+      if (mr != null && mr >= 50) out.muscleRate = mr;
+    }
+    if (out.waterMass == null) {
+      let wm = findByKw(tRows, ["体水分量", "体水份量", "水分量", "水分"], [25, 65], isKg);
+      if (wm == null) {
+        const cand = tRows[0].tokens.filter((x) => x.v >= 25 && x.v <= 65 && x.v !== out.weight && x.v !== out.muscleRate);
+        if (cand.length) wm = cand[0].v;
+      }
+      out.waterMass = wm;
+    }
+    if (out.weight == null) {
+      let w = findByKw(tRows, ["体重"], [45, 300], isKg);
+      if (w == null) {
+        const kg = tRows[0].tokens.filter((x) => x.v >= 45 && x.v <= 300 && x.v !== out.waterMass);
+        if (kg.length) w = Math.max(...kg.map((x) => x.v));
+      }
+      out.weight = w;
+    }
 
     return out;
   }
@@ -2026,19 +2137,48 @@
           setHint("⏳ 正在加载识别引擎…");
           await ensureTesseract();
           setHint("⏳ 识别中（首次较慢，请稍候）…");
-          // 先预处理图片（深色背景反色+二值化），再识别，大幅提高深色截图准确率
+          // 先预处理图片（深色背景反色、放大提升小字识别），再识别
           const processed = await preprocessScaleImage(file);
-          const { data: { text } } = await window.__tessWorker.recognize(processed);
+          const result = await window.__tessWorker.recognize(processed);
+          const text = result && result.data ? result.data.text : "";
+          const lines = result && result.data ? result.data.lines : null;
+          const imgH = processed.height;
           console.log("[OCR] 识别文本:", text);
-          const r = extractBodyFromOCR(text);
+          const r = extractBodyFromOCR(text, lines, imgH);
+
+          // 顶部 35% 二次 OCR：体重是大字号+阴影，主识别常常失败（"66.2"→"6 6 7"），
+          // 单独裁剪后 Tesseract 表现更稳定
+          if (r.weight == null) {
+            try {
+              setHint("⏳ 再次识别体重…");
+              const topCanvas = cropCanvasTop(processed, 0.35);
+              const topRes = await window.__tessWorker.recognize(topCanvas);
+              const topW = extractWeightFromTop(
+                topRes && topRes.data ? topRes.data.text : "",
+                topRes && topRes.data ? topRes.data.lines : null,
+                topCanvas.height
+              );
+              if (topW != null) {
+                r.weight = topW;
+                console.log("[OCR] 顶部二次识别得到体重:", topW);
+              }
+            } catch (e) {
+              console.warn("[OCR] 顶部二次 OCR 失败:", e);
+            }
+          }
+
           let filled = 0;
           if (r.weight != null) { $("#wWeight").value = r.weight; filled++; }
           if (r.fatRate != null) { $("#wFat").value = r.fatRate; filled++; }
           if (r.muscleRate != null) { $("#wMus").value = r.muscleRate; filled++; }
           if (r.waterMass != null) { $("#wWater").value = r.waterMass; filled++; }
+          const missing = ["weight", "fatRate", "muscleRate", "waterMass"].filter((k) => r[k] == null);
           if (filled > 0) {
-            setHint(`✅ 已识别 ${filled} 项，请核对后保存`, "#10b981");
-            toast(`已识别 ${filled} 项指标，请核对后点保存`);
+            const msg = missing.length
+              ? `✅ 已识别 ${filled}/4 项${missing.length ? "（缺" + missing.length + "项可手动补）" : ""}，请核对后保存`
+              : `✅ 已识别全部 ${filled} 项，请核对后保存`;
+            setHint(msg, missing.length ? "#f59e0b" : "#10b981");
+            toast(msg);
           } else {
             setHint("⚠️ 未识别到有效指标，请手动填写", "#f59e0b");
             toast("未识别到有效指标，请手动填写", "warn");
