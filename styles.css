@@ -511,6 +511,7 @@ textarea { width: 100%; min-height: 80px; resize: vertical; font-family: inherit
 .trend-tab.active { background: var(--surface); color: var(--ink); box-shadow: var(--sh-sm); }
 
 .trend-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.trend-grid-4 { grid-template-columns: repeat(2, 1fr); }
 .trend-sub { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); padding: 14px 14px 6px; }
 .ts-head { display: flex; align-items: baseline; gap: 7px; font-size: var(--fs-md); font-weight: 700; color: var(--ink); margin-bottom: 6px; }
 .ts-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
@@ -545,6 +546,9 @@ textarea { width: 100%; min-height: 80px; resize: vertical; font-family: inherit
   .acct-grid { grid-template-columns: 1fr; }
   .asset-legend { grid-template-columns: 1fr; }
   .trend-grid { grid-template-columns: 1fr; }
+  .trend-grid-4 { grid-template-columns: 1fr; }
+  .ov-body-row { flex-wrap: wrap; }
+  .ov-body-row .stat { flex: 0 0 calc(50% - 10px); }
   .form-2, .form-3 { grid-template-columns: 1fr; }
   .meal-grid { grid-template-columns: 1fr; } /* 手机端单列显示 */
 }
