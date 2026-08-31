@@ -736,7 +736,7 @@
   function sortedWeight() { return (D.nutrition.weight || []).slice().sort((a, b) => a.date.localeCompare(b.date)); }
   function bodyTrendData(days) {
     const all = sortedWeight();
-    if (!all.length) return { labels: [], weight: [], fat: [], muscle: [] };
+    if (!all.length) return { labels: [], weight: [], fat: [], muscle: [], water: [] };
     const end = new Date();
     const series = [];
     if (days === 365) {
@@ -745,11 +745,13 @@
       const byMonth = {};
       all.forEach((r) => { const m = r.date.slice(0, 7); (byMonth[m] = byMonth[m] || []).push(r); });
       const avg = (m, f) => { const a = byMonth[m]; if (!a) return null; return +((a.reduce((s, r) => s + f(r), 0) / a.length)).toFixed(1); };
+      const avgW = (m) => { const a = (byMonth[m] || []).filter((r) => r.waterMass != null && r.waterMass !== ""); if (!a.length) return null; return +((a.reduce((s, r) => s + r.waterMass, 0) / a.length)).toFixed(1); };
       return {
         labels: months.map((m) => +m.split("-")[1] + "月"),
         weight: months.map((m) => avg(m, (r) => r.weight)),
         fat: months.map((m) => avg(m, (r) => r.weight * r.fatRate / 100)),
         muscle: months.map((m) => avg(m, (r) => r.weight * r.muscleRate / 100)),
+        water: months.map(avgW),
       };
     }
     for (let i = days - 1; i >= 0; i--) {
@@ -762,8 +764,73 @@
       weight: series.map((x) => x.rec ? x.rec.weight : null),
       fat: series.map((x) => x.rec ? +(x.rec.weight * x.rec.fatRate / 100).toFixed(1) : null),
       muscle: series.map((x) => x.rec ? +(x.rec.weight * x.rec.muscleRate / 100).toFixed(1) : null),
+      water: series.map((x) => (x.rec && x.rec.waterMass != null && x.rec.waterMass !== "") ? x.rec.waterMass : null),
     };
   }
+
+  /* ============ 体脂秤截图 OCR 识别（Tesseract.js） ============ */
+  // 动态加载外部脚本
+  function loadExternalScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = src; s.onload = resolve; s.onerror = () => reject(new Error("脚本加载失败"));
+      document.head.appendChild(s);
+    });
+  }
+  // 懒加载 Tesseract.js 并创建识别 worker（chi_sim 中文 + eng 数字）
+  let __tessPromise = null;
+  async function ensureTesseract() {
+    if (window.__tessWorker) return window.__tessWorker;
+    if (!__tessPromise) {
+      __tessPromise = (async () => {
+        if (!window.Tesseract) {
+          await loadExternalScript("https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js");
+        }
+        window.__tessWorker = await window.Tesseract.createWorker("chi_sim+eng");
+        return window.__tessWorker;
+      })();
+    }
+    try { await __tessPromise; } catch (e) { __tessPromise = null; throw e; }
+    return window.__tessWorker;
+  }
+  // 从 OCR 文本提取四个指标：体重、体脂率、肌肉率、体水份量
+  function extractBodyFromOCR(text) {
+    const t = (text || "").replace(/\s+/g, " ");
+    const out = { weight: null, fatRate: null, muscleRate: null, waterMass: null };
+    // 定位关键词：关键词前取「最后一个」数字+单位（对应"值 kg 标签"格式），
+    // 关键词后取「第一个」（兜底，对应"体重"这类标签在前的场景）
+    const numNear = (kw, unit) => {
+      const kwEsc = kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const km = t.match(new RegExp(kwEsc, "i"));
+      if (!km) return null;
+      const kwIdx = km.index;
+      const before = t.slice(Math.max(0, kwIdx - 22), kwIdx);
+      const after = t.slice(kwIdx + kw.length, kwIdx + kw.length + 22);
+      const numRe = new RegExp("(\\d+(?:\\.\\d+)?)\\s*" + unit, "gi");
+      let m, beforeLast = null;
+      while ((m = numRe.exec(before)) !== null) { beforeLast = m[1]; }
+      if (beforeLast != null) return parseFloat(beforeLast);
+      numRe.lastIndex = 0;
+      const am = numRe.exec(after);
+      return am ? parseFloat(am[1]) : null;
+    };
+    // 体脂率 / 肌肉率（%）
+    out.fatRate = numNear("体脂率", "%") || numNear("体脂", "%");
+    out.muscleRate = numNear("肌肉率", "%");
+    // 体水份量（kg）——注意秤上写作「体水分量」
+    out.waterMass = numNear("体水分量", "kg") || numNear("体水份量", "kg") || numNear("水分量", "kg");
+    // 体重（kg）：优先「体重」关键词，否则取所有 kg 数字中最大的（体重一般 > 肌肉量/水份量）
+    let w = numNear("体重", "kg");
+    if (w == null) {
+      const kgNums = []; const re = /(\d+(?:\.\d+)?)\s*kg/gi; let m;
+      while ((m = re.exec(t)) !== null) { const v = parseFloat(m[1]); if (v >= 20 && v <= 300) kgNums.push(v); }
+      const cand = kgNums.filter((v) => v !== out.waterMass);
+      if (cand.length) w = Math.max(...cand);
+    }
+    out.weight = w;
+    return out;
+  }
+  if (typeof window !== "undefined") { window.__ensureTesseract = ensureTesseract; window.__extractBodyFromOCR = extractBodyFromOCR; }
 
   /* ============ 渲染：总览 ============ */
   function renderOverview() {
@@ -856,6 +923,7 @@
           <div class="stat"><div class="stat-label">体重</div><div class="stat-value">${lw ? lw.weight : "--"}<span class="unit">kg</span></div><div class="stat-foot">${ud(lw && lw.weight, wPrev && wPrev.weight)}</div></div>
           <div class="stat"><div class="stat-label">脂肪量</div><div class="stat-value">${lw && fatMass(lw) != null ? fatMass(lw) : "--"}<span class="unit">kg</span></div><div class="stat-foot">体脂 ${lw ? lw.fatRate : "--"}% · ${ud(lw && fatMass(lw), wPrev && fatMass(wPrev))}</div></div>
           <div class="stat"><div class="stat-label">肌肉量</div><div class="stat-value">${lw && musMass(lw) != null ? musMass(lw) : "--"}<span class="unit">kg</span></div><div class="stat-foot">肌肉 ${lw ? lw.muscleRate : "--"}% · ${ud(lw && musMass(lw), wPrev && musMass(wPrev))}</div></div>
+          <div class="stat"><div class="stat-label">体水份量</div><div class="stat-value">${lw && lw.waterMass != null && lw.waterMass !== "" ? lw.waterMass : "--"}<span class="unit">kg</span></div><div class="stat-foot">${ud(lw && lw.waterMass, wPrev && wPrev.waterMass)}</div></div>
         </div>
       </div>
 
@@ -927,6 +995,7 @@
         <div class="fld"><label>体重 kg</label><input type="number" id="qwW" step="0.1" placeholder="0"></div>
         <div class="fld"><label>体脂 %</label><input type="number" id="qwF" step="0.1" placeholder="0"></div>
         <div class="fld"><label>肌肉 %</label><input type="number" id="qwM" step="0.1" placeholder="0"></div>
+        <div class="fld"><label>体水份量 kg</label><input type="number" id="qwWater" step="0.1" placeholder="0"></div>
       </div>
       <button class="btn btn-primary w-full mt-2" id="qwSave">保存</button>`);
     $("#qwSave").onclick = () => {
@@ -934,7 +1003,8 @@
       if (!date || isNaN(w)) { toast("请填写日期和体重", "warn"); return; }
       D.profile.body.weight = w;
       D.nutrition.weight = (D.nutrition.weight || []).filter((x) => x.date !== date);
-      D.nutrition.weight.push({ date, weight: w, fatRate: parseFloat($("#qwF").value) || 0, muscleRate: parseFloat($("#qwM").value) || 0 });
+      const qwWaterVal = parseFloat($("#qwWater").value);
+      D.nutrition.weight.push({ date, weight: w, fatRate: parseFloat($("#qwF").value) || 0, muscleRate: parseFloat($("#qwM").value) || 0, waterMass: isNaN(qwWaterVal) ? 0 : qwWaterVal });
       save(); renderAll(); toast("体重已保存 · 已同步目标"); closeModal();
     };
   }
@@ -1817,24 +1887,31 @@
         <div class="fld"><label>体重 kg</label><input type="number" id="wWeight" step="0.1" placeholder="0"></div>
         <div class="fld"><label>体脂 %</label><input type="number" id="wFat" step="0.1" placeholder="0"></div>
         <div class="fld"><label>肌肉 %</label><input type="number" id="wMus" step="0.1" placeholder="0"></div>
+        <div class="fld"><label>体水份量 kg</label><input type="number" id="wWater" step="0.1" placeholder="0"></div>
         <div class="fld" style="justify-content:flex-end;"><button class="btn btn-primary" id="wSave">保存</button></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
+        <button class="btn btn-sm btn-ghost" id="wUploadBtn">📷 上传秤截图识别</button>
+        <input type="file" id="wImgInput" accept="image/*" style="display:none;">
+        <span class="card-sub" id="wOcrHint" style="font-size:12px;"></span>
       </div>`;
 
     $("#body-weight").innerHTML = `
 
-      <!-- 看板1：身体三参数（最新） -->
+      <!-- 看板1：身体参数（最新） -->
       <div class="card">
         <div class="card-head"><div class="card-title">身体参数（最新）</div><span class="card-sub">${lw ? "更新于 " + lw.date.slice(5) : "还没有记录"}</span></div>
-        <div class="grid grid-3">
+        <div class="grid grid-4">
           <div class="stat"><div class="stat-label">⚖️ 体重</div><div class="stat-value">${lw ? lw.weight : "--"}<span class="unit"> kg</span></div><div class="stat-foot">较上次 ${upDown(lw && lw.weight, prev && prev.weight)}</div></div>
           <div class="stat"><div class="stat-label">🥩 脂肪量</div><div class="stat-value">${lw ? (fatMass(lw) != null ? fatMass(lw) : "--") : "--"}<span class="unit"> kg</span></div><div class="stat-foot">体脂率 ${lw ? lw.fatRate : "--"}% · 较上次 ${upDown(lw && fatMass(lw), prev && fatMass(prev))}</div></div>
           <div class="stat"><div class="stat-label">💪 肌肉量</div><div class="stat-value">${lw ? (musMass(lw) != null ? musMass(lw) : "--") : "--"}<span class="unit"> kg</span></div><div class="stat-foot">肌肉率 ${lw ? lw.muscleRate : "--"}% · 较上次 ${upDown(lw && musMass(lw), prev && musMass(prev))}</div></div>
+          <div class="stat"><div class="stat-label">💧 体水份量</div><div class="stat-value">${lw && lw.waterMass != null && lw.waterMass !== "" ? lw.waterMass : "--"}<span class="unit"> kg</span></div><div class="stat-foot">较上次 ${upDown(lw && lw.waterMass, prev && prev.waterMass)}</div></div>
         </div>
       </div>
 
-      <!-- 看板2：记录体重 / 体脂 / 肌肉 -->
+      <!-- 看板2：记录体重 / 体脂 / 肌肉 / 体水份量 -->
       <div class="card mt-3">
-        <div class="card-head"><div class="card-title">记录体重 / 体脂 / 肌肉</div><span class="card-sub">输入体脂率·肌肉率，自动换算脂肪量 / 肌肉量</span></div>
+        <div class="card-head"><div class="card-title">记录体重 / 体脂 / 肌肉 / 体水份量</div><span class="card-sub">体脂率·肌肉率自动换算脂肪量 / 肌肉量；体水份量直接填 kg</span></div>
         ${wForm}
       </div>
 
@@ -1854,7 +1931,7 @@
             <button class="trend-tab ${D.nutrition.trendDays === 365 ? "active" : ""}" data-days="365">年</button>
           </div>
         </div>
-        <div class="trend-grid">
+        <div class="trend-grid trend-grid-4">
           <div class="trend-sub">
             <div class="ts-head"><span class="ts-dot" style="background:#10b981"></span>体重 <span class="ts-unit">kg</span></div>
             <div class="chart-box"><canvas id="bodyTrendWeight" class="chart"></canvas></div>
@@ -1867,18 +1944,58 @@
             <div class="ts-head"><span class="ts-dot" style="background:#3b82f6"></span>肌肉量 <span class="ts-unit">kg</span></div>
             <div class="chart-box"><canvas id="bodyTrendMuscle" class="chart"></canvas></div>
           </div>
+          <div class="trend-sub">
+            <div class="ts-head"><span class="ts-dot" style="background:#06b6d4"></span>体水份量 <span class="ts-unit">kg</span></div>
+            <div class="chart-box"><canvas id="bodyTrendWater" class="chart"></canvas></div>
+          </div>
         </div>
       </div>`;
 
     $("#wSave").onclick = () => {
-      const date = $("#wDate").value, w = parseFloat($("#wWeight").value), f = parseFloat($("#wFat").value), m = parseFloat($("#wMus").value);
+      const date = $("#wDate").value, w = parseFloat($("#wWeight").value), f = parseFloat($("#wFat").value), m = parseFloat($("#wMus").value), wm = parseFloat($("#wWater").value);
       if (!date || isNaN(w)) { toast("请填写日期和体重", "warn"); return; }
       D.nutrition.weight = (D.nutrition.weight || []).filter((x) => x.date !== date);
-      D.nutrition.weight.push({ date, weight: w, fatRate: f || 0, muscleRate: m || 0 });
+      D.nutrition.weight.push({ date, weight: w, fatRate: f || 0, muscleRate: m || 0, waterMass: isNaN(wm) ? 0 : wm });
       D.nutrition.weight.sort((a, b) => a.date.localeCompare(b.date));
       D.profile.body.weight = w;
       save(); renderWeight(); toast("体重已保存 · 已同步身体参数并重算目标");
     };
+
+    /* ---- 上传秤截图 → OCR 识别四个指标 → 填入表单 ---- */
+    const wUploadBtn = $("#wUploadBtn"), wImgInput = $("#wImgInput"), wOcrHint = $("#wOcrHint");
+    if (wUploadBtn && wImgInput) {
+      wUploadBtn.onclick = () => wImgInput.click();
+      wImgInput.onchange = async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const setHint = (s, color) => { if (wOcrHint) { wOcrHint.textContent = s; wOcrHint.style.color = color || "var(--ink-3)"; } };
+        try {
+          setHint("⏳ 正在加载识别引擎…");
+          await ensureTesseract();
+          setHint("⏳ 识别中（首次较慢，请稍候）…");
+          const { data: { text } } = await window.__tessWorker.recognize(file);
+          const r = extractBodyFromOCR(text);
+          let filled = 0;
+          if (r.weight != null) { $("#wWeight").value = r.weight; filled++; }
+          if (r.fatRate != null) { $("#wFat").value = r.fatRate; filled++; }
+          if (r.muscleRate != null) { $("#wMus").value = r.muscleRate; filled++; }
+          if (r.waterMass != null) { $("#wWater").value = r.waterMass; filled++; }
+          if (filled > 0) {
+            setHint(`✅ 已识别 ${filled} 项，请核对后保存`, "#10b981");
+            toast(`已识别 ${filled} 项指标，请核对后点保存`);
+          } else {
+            setHint("⚠️ 未识别到有效指标，请手动填写", "#f59e0b");
+            toast("未识别到有效指标，请手动填写", "warn");
+          }
+        } catch (err) {
+          console.error("[OCR] 识别失败:", err);
+          setHint("❌ 识别失败，请手动填写", "#f43f5e");
+          toast("识别失败，请手动填写", "warn");
+        } finally {
+          wImgInput.value = ""; // 允许重复上传同一文件
+        }
+      };
+    }
 
     function renderWeightHist() {
       const box = $("#weightHist"); if (!box) return;
@@ -1888,13 +2005,16 @@
       for (let i = a.length - 1; i >= 0; i--) {
         const r = a[i], p = i > 0 ? a[i - 1] : null;
         const fm = fatMass(r), pm = fatMass(p), mm = musMass(r), mp = musMass(p);
+        const wm = (r.waterMass != null && r.waterMass !== "") ? r.waterMass : null;
+        const pw = p ? ((p.waterMass != null && p.waterMass !== "") ? p.waterMass : null) : null;
         html += `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--border);">
           <div class="row-main">
             <div class="row-title">${r.date.slice(5)}</div>
             <div class="row-meta">
               体重 ${r.weight}kg ${upDown(r.weight, p && p.weight)} ·
               脂肪 ${fm != null ? fm : "--"}kg ${upDown(fm, pm)} ·
-              肌肉 ${mm != null ? mm : "--"}kg ${upDown(mm, mp)}
+              肌肉 ${mm != null ? mm : "--"}kg ${upDown(mm, mp)} ·
+              水份 ${wm != null ? wm : "--"}kg ${upDown(wm, pw)}
             </div>
           </div>
           <button class="mi-del" data-delweight="${r.date}" title="删除" style="margin-left:10px;">×</button>
@@ -1926,6 +2046,7 @@
     drawTrend("#bodyTrendWeight", td.weight, "#10b981");
     drawTrend("#bodyTrendFat", td.fat, "#f43f5e");
     drawTrend("#bodyTrendMuscle", td.muscle, "#3b82f6");
+    drawTrend("#bodyTrendWater", td.water, "#06b6d4");
     animateNumbers($("#body-weight"));
   }
 
