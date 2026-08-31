@@ -884,30 +884,74 @@
   //   2) 行级定位 + 关键词模糊匹配（OCR 会把「体脂率」打成「体 脂 率」）
   //   3) 数值范围 + 单位字符双重过滤
   //   4) 「除以 10」启发式（OCR 把 77.9% 打成 779x 时可纠正）
+  //   5) 排除状态栏/抬头/身体得分/日期/时间里的干扰数字
   function extractBodyFromOCR(text, lines, imgHeight) {
     const out = { weight: null, fatRate: null, muscleRate: null, waterMass: null };
 
     // 工具：提取 (值, 单位字符) 列表
     const extractTokens = (s) => {
       if (!s) return [];
-      const re = /(\d{1,3}(?:\.\d+)?)\s*([a-zA-Z%‰¢kKgGqQxXø]?)/g;
+      const re = /(\d+(?:\.\d+)?)\s*([a-zA-Z%‰¢kKgGqQxXø]?)/g;
       const arr = []; let m;
       while ((m = re.exec(s)) !== null) {
         const v = parseFloat(m[1]);
-        if (!isNaN(v)) arr.push({ v, u: m[2] });
+        if (!isNaN(v) && v < 1000) arr.push({ v, u: m[2] });
       }
       return arr;
     };
     const isPct = (u) => ["%", "‰", "¢", "q", "x", "X", "ø"].includes(u);
     const isKg = (u) => ["kg", "k", "g", "K", "G"].includes(u);
 
+    // 判断行文本是否含「噪声」模式（状态栏/抬头/身体得分/日期/时间）
+    // 这些行里的数字必须从候选中排除，否则会污染提取
+    const isNoiseLine = (text) => {
+      if (!text) return false;
+      // 状态栏特征：HH:MM 开头 或 包含电池 100 / 100% / 信号字符
+      if (/^\s*\d{1,2}:\d{2}/.test(text)) return true;
+      // 日期 YYYY/MM/DD 或 YYYY-MM-DD（OCR 经常把日期时间挤一起，不要求边界）
+      if (/(?:^|\D)20\d{2}[\/\-]\d{1,2}[\/\-]\d{1,2}/.test(text)) return true;
+      // 身体得分「81分」/「81,」
+      if (/\b(8[0-9]|9[0-9]|[6-7][0-9])\s*分\b/.test(text)) return true;
+      if (/^\s*8[0-9]\s*,?\s*$/.test(text)) return true;
+      // 电池 100
+      if (/\b100\s*%/.test(text)) return true;
+      return false;
+    };
+    // 文本中所有数字，若落在日期/时间串里也要排除
+    const isNoiseNumber = (text, num) => {
+      // 找数字在 text 中的位置
+      const re = new RegExp("(?<![\\d.])" + num.toString().replace(/\./g, "\\.") + "(?![\\d.])", "g");
+      const m = re.exec(text);
+      if (!m) return false;
+      const idx = m.index;
+      // 看前后 16 字符内是否有日期/时间/分%/%
+      const win = text.slice(Math.max(0, idx - 12), idx + num.toString().length + 12);
+      if (/\b20\d{2}[\/\-]\d{1,2}[\/\-]\d{1,2}/.test(text)) {
+        // 行内含日期 → 这个数字可能在日期串中
+        if (/\b20\d{2}[\/\-]\d{1,2}[\/\-]\d{1,2}/.test(win)) return true;
+      }
+      if (/\b\d{1,2}:\d{2}\b/.test(win)) return true;
+      if (/分\b/.test(win) && /^\s*\d+\s*分/.test(win)) return true;
+      return false;
+    };
+    // 从 tokens 列表里过滤掉噪声数字
+    const filterNoise = (tokens, text) => {
+      if (!text) return tokens;
+      if (isNoiseLine(text)) return []; // 整行是状态栏/抬头/日期时间/身体得分/电池 → 全部排除
+      return tokens.filter((t) => !isNoiseNumber(text, t.v));
+    };
+
     // 工具：行级 + 关键词 + 范围 + 单位过滤
     const findByKw = (rows, kws, range, unitFilter) => {
       const tryRow = (row) => {
-        const cand = row.tokens.filter((t) => t.v >= range[0] && t.v <= range[1] && (!unitFilter || unitFilter(t.u)));
+        // 噪声行直接跳过
+        if (isNoiseLine(row.text)) return null;
+        let tokens = row.tokens;
+        if (row.text) tokens = filterNoise(tokens, row.text);
+        let cand = tokens.filter((t) => t.v >= range[0] && t.v <= range[1] && (!unitFilter || unitFilter(t.u)));
         if (cand.length) return cand[cand.length - 1].v;
         // 除以 10 启发式（OCR 把 77.9% 打成 779x 时）
-        const cand10 = row.tokens.filter((t) => {
+        const cand10 = tokens.filter((t) => {
           if (unitFilter && !unitFilter(t.u)) return false;
           const v10 = t.v / 10;
           return v10 >= range[0] && v10 <= range[1];
@@ -938,31 +982,47 @@
           tokens: extractTokens(l.text),
         }));
 
+      // 过滤掉顶部 6% 区域（手机状态栏：时间/信号/电池）
+      const dataRows = rows.filter((r) => r.y >= 0.06);
+
       // 体脂率（5~50，% 类单位优先）
-      out.fatRate = findByKw(rows, ["体脂率", "体脂", "脂率"], [5, 50], isPct);
+      out.fatRate = findByKw(dataRows, ["体脂率", "体脂", "脂率"], [5, 50], isPct);
       // 肌肉率（50~100，% 类单位）
-      out.muscleRate = findByKw(rows, ["肌肉率"], [50, 100], isPct);
+      out.muscleRate = findByKw(dataRows, ["肌肉率"], [50, 100], isPct);
       // 体水份量（25~65，kg 类单位优先；无单位兜底）
-      out.waterMass = findByKw(rows, ["体水分量", "体水份量", "水分量", "水分"], [25, 65], isKg)
-        || findByKw(rows, ["体水分量", "体水份量", "水分量", "水分"], [25, 65]);
+      out.waterMass = findByKw(dataRows, ["体水分量", "体水份量", "水分量", "水分"], [25, 65], isKg)
+        || findByKw(dataRows, ["体水分量", "体水份量", "水分量", "水分"], [25, 65]);
+      // OCR 常把"体水分量"打成"全"等错字，关键词失效时退到"中部唯一 [25,65] 数字"启发式
+      if (out.waterMass == null) {
+        for (const r of dataRows) {
+          if (r.y < 0.30 || r.y > 0.80) continue;
+          const tokens = filterNoise(r.tokens, r.text);
+          const cand = tokens.filter((t) => t.v >= 25 && t.v <= 65);
+          if (cand.length) { out.waterMass = cand[0].v; break; }
+        }
+      }
       // 体重：含「体重」关键词 OR 顶部最大数字 45~300
-      out.weight = findByKw(rows, ["体重"], [45, 300], isKg)
-        || findByKw(rows, ["体重"], [45, 300]);
+      out.weight = findByKw(dataRows, ["体重"], [45, 300], isKg)
+        || findByKw(dataRows, ["体重"], [45, 300]);
       if (out.weight == null) {
-        const topRows = rows.filter((r) => r.y < 0.35);
-        const cand = topRows.flatMap((r) => r.tokens).filter((t) => t.v >= 45 && t.v <= 300);
+        // 只在 6% ~ 40% 区域找大数字（避免底部肌肉量/水份量被误选为体重）
+        const topRows = dataRows.filter((r) => r.y < 0.40);
+        const cand = topRows.flatMap((r) => filterNoise(r.tokens, r.text)).filter((t) => t.v >= 45 && t.v <= 300);
         if (cand.length) out.weight = Math.max(...cand.map((t) => t.v));
       }
     }
 
     // ===== 第 2 层：纯文本兜底（关键词匹配 + 数值范围启发式） =====
     const tFlat = (text || "").replace(/\s+/g, "");
-    const tRows = [{ textFlat: tFlat, tokens: extractTokens(text || "") }];
+    // 把整段当成一行（含噪声行）
+    const allTokens = extractTokens(text || "");
+    const cleanTokens = allTokens.filter((t) => !isNoiseNumber(text || "", t.v));
+    const tRows = [{ textFlat: tFlat, text: text || "", tokens: cleanTokens }];
 
     if (out.fatRate == null) {
       let fr = findByKw(tRows, ["体脂率", "体脂", "脂率"], [5, 50], isPct);
       if (fr == null) {
-        const small = tRows[0].tokens.filter((x) => x.v > 5 && x.v < 50);
+        const small = cleanTokens.filter((x) => x.v > 5 && x.v < 50);
         if (small.length) fr = small[0].v;
       }
       if (fr != null && fr < 50) out.fatRate = fr;
@@ -970,7 +1030,7 @@
     if (out.muscleRate == null) {
       let mr = findByKw(tRows, ["肌肉率"], [50, 100], isPct);
       if (mr == null) {
-        const big = tRows[0].tokens.filter((x) => x.v >= 50 && x.v < 100);
+        const big = cleanTokens.filter((x) => x.v >= 50 && x.v < 100);
         if (big.length) mr = big[0].v;
       }
       if (mr != null && mr >= 50) out.muscleRate = mr;
@@ -978,7 +1038,7 @@
     if (out.waterMass == null) {
       let wm = findByKw(tRows, ["体水分量", "体水份量", "水分量", "水分"], [25, 65], isKg);
       if (wm == null) {
-        const cand = tRows[0].tokens.filter((x) => x.v >= 25 && x.v <= 65 && x.v !== out.weight && x.v !== out.muscleRate);
+        const cand = cleanTokens.filter((x) => x.v >= 25 && x.v <= 65 && x.v !== out.weight && x.v !== out.muscleRate);
         if (cand.length) wm = cand[0].v;
       }
       out.waterMass = wm;
@@ -986,7 +1046,7 @@
     if (out.weight == null) {
       let w = findByKw(tRows, ["体重"], [45, 300], isKg);
       if (w == null) {
-        const kg = tRows[0].tokens.filter((x) => x.v >= 45 && x.v <= 300 && x.v !== out.waterMass);
+        const kg = cleanTokens.filter((x) => x.v >= 45 && x.v <= 300 && x.v !== out.waterMass);
         if (kg.length) w = Math.max(...kg.map((x) => x.v));
       }
       out.weight = w;
