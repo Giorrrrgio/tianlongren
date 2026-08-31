@@ -793,6 +793,44 @@
     try { await __tessPromise; } catch (e) { __tessPromise = null; throw e; }
     return window.__tessWorker;
   }
+  // 图像预处理：深色背景秤截图 → 反色 + 二值化，大幅提高 OCR 准确率
+  // （Tesseract 对「浅色背景深色文字」效果最好，而体脂秤 APP 多为深色背景白字）
+  function preprocessScaleImage(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          // 适当放大提升小字识别率（最长边到 1600px）
+          const scale = Math.min(2, 1600 / Math.max(img.width, img.height)) || 1;
+          canvas.width = Math.round(img.width * (scale > 1 ? scale : 1));
+          canvas.height = Math.round(img.height * (scale > 1 ? scale : 1));
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const d = id.data;
+          // 1) 计算平均亮度，判断是否深色背景
+          let sum = 0;
+          for (let i = 0; i < d.length; i += 4) sum += (d[i] + d[i + 1] + d[i + 2]) / 3;
+          const avg = sum / (d.length / 4);
+          const invert = avg < 128; // 深色背景需要反色
+          // 2) 反色（如需）+ 二值化增强对比度
+          for (let i = 0; i < d.length; i += 4) {
+            let g = (d[i] + d[i + 1] + d[i + 2]) / 3;
+            if (invert) g = 255 - g;
+            g = g > 140 ? 255 : 0; // 二值化
+            d[i] = d[i + 1] = d[i + 2] = g;
+          }
+          ctx.putImageData(id, 0, 0);
+          URL.revokeObjectURL(url);
+          resolve(canvas);
+        } catch (err) { URL.revokeObjectURL(url); reject(err); }
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("图片加载失败")); };
+      img.src = url;
+    });
+  }
   // 从 OCR 文本提取四个指标：体重、体脂率、肌肉率、体水份量
   function extractBodyFromOCR(text) {
     const t = (text || "").replace(/\s+/g, " ");
@@ -814,9 +852,12 @@
       const am = numRe.exec(after);
       return am ? parseFloat(am[1]) : null;
     };
-    // 体脂率 / 肌肉率（%）
-    out.fatRate = numNear("体脂率", "%") || numNear("体脂", "%");
-    out.muscleRate = numNear("肌肉率", "%");
+    // 体脂率：关键词匹配，但必须在 <50% 范围（体脂率一般 <50%）
+    let fr = numNear("体脂率", "%") || numNear("体脂", "%");
+    if (fr != null && fr < 50) out.fatRate = fr;
+    // 肌肉率：关键词匹配，但必须 >=50%（肌肉率一般 >50%）
+    let mr = numNear("肌肉率", "%");
+    if (mr != null && mr >= 50) out.muscleRate = mr;
     // 体水份量（kg）——注意秤上写作「体水分量」
     out.waterMass = numNear("体水分量", "kg") || numNear("体水份量", "kg") || numNear("水分量", "kg");
     // 体重（kg）：优先「体重」关键词，否则取所有 kg 数字中最大的（体重一般 > 肌肉量/水份量）
@@ -828,6 +869,18 @@
       if (cand.length) w = Math.max(...cand);
     }
     out.weight = w;
+
+    /* ---- 数字兜底：关键词识别不全时，用纯数字启发式补充 ---- */
+    // 收集所有 % 和 kg 数字（合理范围）
+    const pctNums = []; { const re = /(\d+(?:\.\d+)?)\s*%/g; let m; while ((m = re.exec(t)) !== null) { const v = parseFloat(m[1]); if (v > 0 && v < 100) pctNums.push(v); } }
+    const allKg = []; { const re = /(\d+(?:\.\d+)?)\s*kg/gi; let m; while ((m = re.exec(t)) !== null) { const v = parseFloat(m[1]); if (v >= 2 && v <= 300) allKg.push(v); } }
+    // 体脂率：缺失时取 <50% 的（体脂率一般 <50%）
+    if (out.fatRate == null && pctNums.length) { const small = pctNums.filter((v) => v < 50); if (small.length) out.fatRate = small[0]; }
+    // 肌肉率：缺失时取 >=50% 的（肌肉率一般 >50%）
+    if (out.muscleRate == null && pctNums.length) { const big = pctNums.filter((v) => v >= 50); if (big.length) out.muscleRate = big[0]; }
+    // 体重：缺失时取最大 kg
+    if (out.weight == null && allKg.length) { const cand = allKg.filter((v) => v !== out.waterMass); if (cand.length) out.weight = Math.max(...cand); }
+
     return out;
   }
   if (typeof window !== "undefined") { window.__ensureTesseract = ensureTesseract; window.__extractBodyFromOCR = extractBodyFromOCR; }
@@ -1973,7 +2026,10 @@
           setHint("⏳ 正在加载识别引擎…");
           await ensureTesseract();
           setHint("⏳ 识别中（首次较慢，请稍候）…");
-          const { data: { text } } = await window.__tessWorker.recognize(file);
+          // 先预处理图片（深色背景反色+二值化），再识别，大幅提高深色截图准确率
+          const processed = await preprocessScaleImage(file);
+          const { data: { text } } = await window.__tessWorker.recognize(processed);
+          console.log("[OCR] 识别文本:", text);
           const r = extractBodyFromOCR(text);
           let filled = 0;
           if (r.weight != null) { $("#wWeight").value = r.weight; filled++; }
