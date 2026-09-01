@@ -5,8 +5,8 @@
 
 const CACHE_NAME = 'tlr-v6';
 
-// 需要缓存的静态资源
-const STATIC_ASSETS = [
+// 核心资源：小、必需。用 addAll 一次性预缓存。
+const CORE_ASSETS = [
   '/tianlongren/',
   '/tianlongren/index.html',
   '/tianlongren/styles.css',
@@ -15,7 +15,13 @@ const STATIC_ASSETS = [
   '/tianlongren/manifest.json',
   '/tianlongren/icon-192-v2.png',
   '/tianlongren/icon-512-v2.png',
-  // PP-OCRv4 ONNX 模型（自托管到 GitHub Pages，国内可达）
+];
+
+// PP-OCRv4 ONNX 模型（自托管到 GitHub Pages，国内可达），合计约 16MB。
+// 刻意与核心资源分开：cache.addAll 是「全有或全无」，只要这 4 个里有 1 个拉取失败
+// （弱网 / 断点 / 配额超限），整个 install 就失败，连首页都缓存不上 —— 离线直接废掉。
+// 模型只是加速二次识别，缺了可以现拉，所以逐个 add 且失败不致命。
+const OCR_MODEL_ASSETS = [
   '/tianlongren/models/ocr/det.onnx',
   '/tianlongren/models/ocr/rec.onnx',
   '/tianlongren/models/ocr/cls.onnx',
@@ -34,9 +40,16 @@ const OCR_CDN_HOSTS = [
 self.addEventListener('install', (event) => {
   console.log('[SW] 安装中...');
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      console.log('[SW] 缓存静态资源');
-      return cache.addAll(STATIC_ASSETS);
+    caches.open(CACHE_NAME).then(async (cache) => {
+      console.log('[SW] 缓存核心资源');
+      await cache.addAll(CORE_ASSETS);
+      // 模型尽力而为：单个失败不影响离线可用性，下次用到时再缓存
+      await Promise.all(OCR_MODEL_ASSETS.map(async (u) => {
+        try {
+          const resp = await fetch(u);
+          if (resp.ok) await cache.put(u, resp.clone());
+        } catch (e) { console.warn('[SW] OCR 模型预缓存跳过:', u, e); }
+      }));
     })
   );
   self.skipWaiting(); // 激活新的 SW
