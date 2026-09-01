@@ -768,7 +768,18 @@
     };
   }
 
-  /* ============ 体脂秤截图 OCR 识别（Tesseract.js） ============ */
+  /* ============ 体脂秤截图 OCR 识别（PP-OCRv4 ONNX 主引擎 + Tesseract.js 兜底） ============
+   *
+   * 引擎选型根因：
+   *   - Tesseract.js 对秤截图顶部大字号「66.5」几乎必丢小数点（实测 → "66 ;"），
+   *     二次裁剪 + 数字白名单也救不回来。这是 Tesseract 模型本身的硬伤。
+   *   - PP-OCRv4 (PaddleOCR) 移动端模型对中英文+数字场景实测 100% 准确
+   *     （66.5/18.0/77.7/37.5 全部命中），同款模型有浏览器 ONNX 推理版本
+   *     (onnx-ocr-js + onnxruntime-web)。
+   *   - 模型自托管到 GitHub Pages（国内可达），首次约 19MB，
+   *     PWA service worker 会缓存，二次秒开。
+   *   - Tesseract.js 保留为 fallback，应对 ONNX 加载失败/慢等场景。
+   */
   // 动态加载外部脚本
   function loadExternalScript(src) {
     return new Promise((resolve, reject) => {
@@ -777,6 +788,135 @@
       document.head.appendChild(s);
     });
   }
+  // 动态加载 ESM 模块（用于 onnx-ocr-js 浏览器版）
+  function loadESM(src) {
+    return import(/* @vite-ignore */ src);
+  }
+
+  /* ---- 主引擎：PP-OCRv4 (onnx-ocr-js) ---- */
+  // 模型文件自托管到 GitHub Pages（workbench/models/ocr/）
+  const PPOCR_MODEL_BASE = "models/ocr/";
+  // esm.sh 多源 fallback（国内 jsdelivr 一般可达，esm.sh 偶尔不稳）
+  const ONNX_OCR_ESM = [
+    "https://esm.sh/onnx-ocr-js@0.0.6?bundle-deps",
+    "https://cdn.jsdelivr.net/npm/onnx-ocr-js@0.0.6/+esm",
+    "https://esm.sh/onnx-ocr-js@0.0.6",
+  ];
+  // onnx-ocr-js 的 ocr() 返回结构与 d.ts 声明不一致，必须做防御式归一化：
+  //   声明：[Box, [string, number]][]  即 [ [box, [text, score]], ... ]
+  //   实现：源码里 `ocr_res.push(tmp_res); return ocr_res;` —— 又多包了一层
+  //        实际拿到的是 [ [ [box, [text, score]], ... ] ]
+  // 另外 text 并不是字符串，而是 [text, score] 元组。
+  // 这里逐级下探，两种形态都能吃下，避免以后升版本再踩坑。
+  function normalizePPOCR(out) {
+    let arr = Array.isArray(out) ? out : [];
+    for (let d = 0; d < 3; d++) {
+      if (!arr.length) return [];
+      const first = arr[0];
+      // 命中 [box, [text, score]]：box 是 4 个 [x, y] 点
+      const isItem = Array.isArray(first) && Array.isArray(first[0]) && Array.isArray(first[0][0])
+        && typeof first[0][0][0] === "number";
+      if (isItem) break;
+      if (Array.isArray(first)) { arr = arr.flat(1); continue; }
+      return [];
+    }
+    const res = [];
+    for (const item of arr) {
+      if (!Array.isArray(item) || !Array.isArray(item[0]) || item[0].length < 4) continue;
+      const ts = item[1];
+      let text = "", score = 0;
+      if (Array.isArray(ts)) { text = String(ts[0] ?? ""); score = typeof ts[1] === "string" ? parseFloat(ts[1]) : (ts[1] || 0); }
+      else if (typeof ts === "string") { text = ts; }
+      if (!text.trim()) continue;
+      res.push({ box: item[0], text, score: isNaN(score) ? 0 : score });
+    }
+    return res;
+  }
+
+  let __ppocrPromise = null;
+  async function ensurePPOCREngine() {
+    if (window.__ppocr) return window.__ppocr;
+    if (!__ppocrPromise) {
+      __ppocrPromise = (async () => {
+        // 1) 加载 onnx-ocr-js 主模块
+        let mod, lastErr;
+        for (const src of ONNX_OCR_ESM) {
+          try { mod = await loadESM(src); if (mod && (mod.ONNXPaddleOCR || mod.default)) break; } catch (e) { lastErr = e; }
+        }
+        if (!mod) throw lastErr || new Error("onnx-ocr-js 加载失败");
+        const ONNXPaddleOCR = mod.ONNXPaddleOCR || mod.default?.ONNXPaddleOCR || mod.default;
+        if (!ONNXPaddleOCR) throw new Error("onnx-ocr-js 导出中找不到 ONNXPaddleOCR");
+
+        // 2) 加载 OpenCV.js（onnx-ocr-js 内部需要 cv.matFromImageData）
+        // 注意：@techstark/opencv-js 的 default 导出是「Promise<cv>」，必须 await 后重新赋值，
+        // 否则 cv 还是个 Promise，cv.matFromImageData 直接 undefined → 推理时崩。
+        const cvMod = await import(/* @vite-ignore */ "https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.11.0/+esm");
+        let cv = cvMod.default || cvMod;
+        if (cv && typeof cv.then === "function") cv = await cv;
+        // 兜底：某些构建暴露的是未初始化对象，需要等 onRuntimeInitialized
+        if (cv && typeof cv.matFromImageData !== "function" && typeof cv.onRuntimeInitialized !== "undefined") {
+          await new Promise((res) => {
+            if (typeof cv.matFromImageData === "function") return res();
+            cv.onRuntimeInitialized = () => res();
+            setTimeout(res, 15000); // 超时兜底，别把 UI 卡死
+          });
+        }
+        if (!cv || typeof cv.matFromImageData !== "function") {
+          throw new Error("OpenCV.js 初始化失败");
+        }
+
+        // 3) 加载 ONNX Runtime Web（onnx-ocr-js 需要 ort.run）
+        const ortMod = await import(/* @vite-ignore */ "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.mjs");
+        const ort = ortMod.default || ortMod;
+
+        // 4) 加载自托管模型 + 字典
+        const [detBuf, recBuf, clsBuf, dictText] = await Promise.all([
+          fetch(PPOCR_MODEL_BASE + "det.onnx").then(r => r.arrayBuffer()).then(b => new Uint8Array(b)),
+          fetch(PPOCR_MODEL_BASE + "rec.onnx").then(r => r.arrayBuffer()).then(b => new Uint8Array(b)),
+          fetch(PPOCR_MODEL_BASE + "cls.onnx").then(r => r.arrayBuffer()).then(b => new Uint8Array(b)),
+          fetch(PPOCR_MODEL_BASE + "ppocr_keys_v1.txt").then(r => r.text()),
+        ]);
+
+        // 5) 初始化 OCR 引擎
+        const ocr = new ONNXPaddleOCR({ use_angle_cls: true });
+        const textSystem = await ocr.init({
+          cv, ort,
+          det_model_array_buffer: detBuf,
+          rec_model_array_buffer: recBuf,
+          cls_model_array_buffer: clsBuf,
+          rec_char_dict: dictText,
+        });
+
+        // 缓存到一个 helper，调用方传 canvas
+        window.__ppocr = {
+          ocr, textSystem, cv,
+          // 同步调用入口：传 canvas，返回标准 [[box, text, score], ...]
+          recognize: async function (canvas) {
+            try {
+              const w = canvas.width, h = canvas.height;
+              const ctx = canvas.getContext("2d");
+              const imageData = ctx.getImageData(0, 0, w, h);
+              const mat = cv.matFromImageData(imageData);
+              const mat3ch = new cv.Mat();
+              cv.cvtColor(mat, mat3ch, cv.COLOR_RGBA2BGR);
+              mat.delete && mat.delete();
+              const out = await ocr.ocr(textSystem, mat3ch, true, true, true);
+              mat3ch.delete && mat3ch.delete();
+              return normalizePPOCR(out);
+            } catch (e) {
+              console.error("[PPOCR] recognize error:", e);
+              return [];
+            }
+          },
+        };
+        return window.__ppocr;
+      })();
+    }
+    try { await __ppocrPromise; } catch (e) { __ppocrPromise = null; throw e; }
+    return window.__ppocr;
+  }
+
+  /* ---- 兜底引擎：Tesseract.js ---- */
   // Tesseract.js CDN 多源 fallback（国内访问 jsdelivr 可能慢/被墙）
   const TESSERACT_CDNS = [
     "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js",
@@ -803,9 +943,14 @@
     try { await __tessPromise; } catch (e) { __tessPromise = null; throw e; }
     return window.__tessWorker;
   }
-  // 图像预处理：仅对深色背景反色，浅色背景原样，统
-  // 一放大提升小字识别率。不做全局二值化（会把秤截图
-  // 的数字小数点/笔画细节破坏掉，得不偿失）。
+  // 图像预处理（主引擎 PP-OCRv4 专用）：
+  //   · 不反色：PP-OCRv4 对深浅背景都稳健，官方 rec 模型自带归一化；
+  //     本地用 RapidOCR 在同一批截图上验证时就是「原图、不反色」跑出 100% 准确的，
+  //     反色反而可能破坏深色主题下的对比。Tesseract 兜底时才反色（它只吃浅底深字）。
+  //   · 不无脑放大：之前固定放大到长边 2200px，1284×2778 的截图会被拉到 2054×4445，
+  //     单是 ImageData 就 36MB，浏览器里 Mat 转换 + 推理明显卡顿。
+  //     改为只在图片过小/过大时缩放：长边 < 1600 放大（救小字），> 2600 缩小（控内存）。
+  //   · 不做全局二值化：会破坏小数点和笔画细节，得不偿失。
   function preprocessScaleImage(file) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
@@ -824,18 +969,18 @@
           const avg = sum / (sid.length / 4);
           const isDark = avg < 128;
 
-          // 2) 主 canvas：放大到长边约 2200px，提升小字识别率
-          const scale = Math.max(1.6, 2200 / Math.max(img.width, img.height));
+          // 2) 主 canvas：按需缩放
+          const longEdge = Math.max(img.width, img.height) || 1;
+          let scale = 1;
+          if (longEdge < 1600) scale = 1600 / longEdge;
+          else if (longEdge > 2600) scale = 2600 / longEdge;
           const canvas = document.createElement("canvas");
-          canvas.width = Math.round(img.width * scale);
-          canvas.height = Math.round(img.height * scale);
+          canvas.width = Math.max(1, Math.round(img.width * scale));
+          canvas.height = Math.max(1, Math.round(img.height * scale));
           const ctx = canvas.getContext("2d", { willReadFrequently: true });
-          if (isDark) {
-            // 深色背景：反色（Tesseract 偏好浅底深字）
-            ctx.filter = "invert(1)";
-          }
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          ctx.filter = "none";
+          // 把背景深浅标记挂在 canvas 上，Tesseract 兜底路径据此决定是否反色
+          canvas.__isDark = isDark;
           URL.revokeObjectURL(url);
           resolve(canvas);
         } catch (err) { URL.revokeObjectURL(url); reject(err); }
@@ -843,6 +988,16 @@
       img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("图片加载失败")); };
       img.src = url;
     });
+  }
+  // 反色（Tesseract.js 偏好浅底深字，深色截图必须先反色）
+  function invertCanvas(srcCanvas) {
+    const c = document.createElement("canvas");
+    c.width = srcCanvas.width; c.height = srcCanvas.height;
+    const cx = c.getContext("2d", { willReadFrequently: true });
+    cx.filter = "invert(1)";
+    cx.drawImage(srcCanvas, 0, 0);
+    cx.filter = "none";
+    return c;
   }
   // 从 canvas 裁剪顶部 0~ratio 区域，返回新 canvas
   function cropCanvasTop(srcCanvas, ratio) {
@@ -879,14 +1034,95 @@
     return Math.max(...nums);
   }
   // 从 OCR 文本 + 行坐标提取四个指标：体重、体脂率、肌肉率、体水份量
+  // 支持两种输入：
+  //   1) Tesseract 风格：(text, lines, imgHeight) — text 全文 + lines[].bbox.y0/y1
+  //   2) PP-OCR 风格：(items, imgHeight) — items: [{box:[[x,y]x4], text, score}]
   // 核心思路：秤截图 OCR 经常丢单位（kg→g/k/q，%→%/x/¢/‰），所以
   //   1) 每个数字带 (值, 单位) 一起提取
   //   2) 行级定位 + 关键词模糊匹配（OCR 会把「体脂率」打成「体 脂 率」）
   //   3) 数值范围 + 单位字符双重过滤
   //   4) 「除以 10」启发式（OCR 把 77.9% 打成 779x 时可纠正）
   //   5) 排除状态栏/抬头/身体得分/日期/时间里的干扰数字
-  function extractBodyFromOCR(text, lines, imgHeight) {
+  function extractBodyFromOCR(textOrItems, linesOrImgHeight, maybeImgHeight) {
+    // ===== 入参归一化：构造标准 rows 数组 =====
+    let rows = [];
+    let fullText = "";
+    let imgHeight = 0;
+
+    // 收集「绝对坐标」行，统一在最后做归一化（x 必须按图片宽度归一，否则列重叠判断会失真）
+    const rawRows = [];
+    if (Array.isArray(textOrItems) && textOrItems.length && textOrItems[0] && textOrItems[0].box) {
+      // PP-OCR 风格：[{box, text, score}, ...]
+      const items = textOrItems;
+      imgHeight = linesOrImgHeight || 1;
+      for (const it of items) {
+        if (!it || !it.text || !it.text.trim()) continue;
+        const box = it.box;
+        if (!Array.isArray(box) || box.length < 4) continue;
+        const ys = box.map(p => p[1]);
+        const xs = box.map(p => p[0]);
+        rawRows.push({
+          y0: Math.min(...ys), y1: Math.max(...ys),
+          x0: Math.min(...xs), x1: Math.max(...xs),
+          text: it.text.trim(),
+          textFlat: it.text.replace(/\s+/g, ""),
+          score: it.score || 0,
+        });
+        fullText += " " + it.text;
+      }
+    } else {
+      // Tesseract 风格：(text, lines, imgHeight) 或 (text, null, imgHeight)
+      fullText = textOrItems || "";
+      imgHeight = maybeImgHeight || linesOrImgHeight || 0;
+      if (Array.isArray(linesOrImgHeight) && linesOrImgHeight.length && imgHeight) {
+        for (const l of linesOrImgHeight) {
+          if (!l.text || !l.text.trim()) continue;
+          rawRows.push({
+            y0: l.bbox.y0, y1: l.bbox.y1,
+            x0: l.bbox.x0 || 0, x1: l.bbox.x1 || 0,
+            text: l.text.trim(),
+            textFlat: l.text.replace(/\s+/g, ""),
+            score: 1,
+          });
+        }
+      }
+    }
+    // 图片宽度：用所有行的最大 x 估算（OCR 回调里拿不到 canvas 宽度），退化为 imgHeight
+    const imgWidth = rawRows.reduce((mx, r) => Math.max(mx, r.x1 || 0), 0) || imgHeight || 1;
+    const H = imgHeight || 1, W = imgWidth || 1;
+    for (const r of rawRows) {
+      rows.push({
+        y: ((r.y0 + r.y1) / 2) / H,
+        y0N: r.y0 / H,
+        y1N: r.y1 / H,
+        x0N: (r.x0 || 0) / W,
+        x1N: (r.x1 || 0) / W,
+        h: (r.y1 - r.y0) / H,
+        text: r.text,
+        textFlat: r.textFlat,
+        score: r.score,
+      });
+    }
+    // 关键：按 y 再按 x 排序。PP-OCR 返回顺序是检测框顺序而非阅读顺序，
+    // 不排序的话「关键词行 → 上一行/下一行」的关联会随机命中错误行的数字
+    // （实测：BMI 22.5 与体脂率 18.0 处在同一 y 段左右两列，不排序会取错）。
+    rows.sort((a, b) => (a.y - b.y) || (a.x0N - b.x0N));
+
     const out = { weight: null, fatRate: null, muscleRate: null, waterMass: null };
+
+    // ===== 第 0 层：页面类型判别 =====
+    // 实测翻车场景：用户误传 App 自己的体重页/历史记录页。那种页面里全是说明文案和已填数字，
+    // 硬提取会把「体脂率·肌肉率自动换算脂肪量/肌肉量」这类说明文字里的数字当指标填进表单，
+    // 属于主动制造错误数据。命中 App 专属特征词就直接判为「非秤报告」，交给上层给明确提示。
+    const APP_PAGE_MARKS = [
+      "记录体重/体脂", "上传秤截图识别", "历史记录", "掌控每一天",
+      "未识别到有效指标", "请核对后保存", "自动换算脂肪量",
+    ];
+    const flatAll = (fullText || "").replace(/\s+/g, "");
+    if (APP_PAGE_MARKS.some((mk) => flatAll.includes(mk.replace(/\s+/g, "")))) {
+      out.__page = "app";
+      return out;
+    }
 
     // 工具：提取 (值, 单位字符) 列表
     const extractTokens = (s) => {
@@ -899,6 +1135,9 @@
       }
       return arr;
     };
+    // 给每个 row 填充 tokens
+    for (const r of rows) r.tokens = extractTokens(r.text);
+
     const isPct = (u) => ["%", "‰", "¢", "q", "x", "X", "ø"].includes(u);
     const isKg = (u) => ["kg", "k", "g", "K", "G"].includes(u);
 
@@ -941,57 +1180,118 @@
       return tokens.filter((t) => !isNoiseNumber(text, t.v));
     };
 
+    // 两行在 x 轴上的重叠度（0~1，按较窄行宽度归一）
+    // 秤报告是「数值在上、标签在下」的左右分栏布局：
+    //   BMI 22.5(左列 x .07-.18) / 体脂率 18.0(右列 x .54-.65) 处在同一 y 段
+    // 不做列判断就会把 BMI 当成体脂率 —— 这是之前取错值的根因。
+    const xOverlapRatio = (a, b) => {
+      const lo = Math.max(a.x0N, b.x0N), hi = Math.min(a.x1N, b.x1N);
+      if (!(hi > lo)) return 0;
+      const wa = Math.max(1e-4, a.x1N - a.x0N), wb = Math.max(1e-4, b.x1N - b.x0N);
+      return (hi - lo) / Math.min(wa, wb);
+    };
+
     // 工具：行级 + 关键词 + 范围 + 单位过滤
-    const findByKw = (rows, kws, range, unitFilter) => {
-      const tryRow = (row) => {
+    // allowNoUnit：关键词已通过「列重叠」精确定位时，单位是弱证据，允许舍弃单位匹配
+    //   （PP-OCR 经常把「%」整个丢掉，如 "18.0%" → "18.0"，u 为空字符串）
+    const findByKw = (rowsIn, kws, range, unitFilter, allowNoUnit) => {
+      const pick = (row) => {
+        if (!row) return null;
         // 噪声行直接跳过
         if (isNoiseLine(row.text)) return null;
-        let tokens = row.tokens;
+        let tokens = row.tokens || [];
         if (row.text) tokens = filterNoise(tokens, row.text);
+        if (!tokens.length) return null;
+        // 1) 严格匹配（带单位）
         let cand = tokens.filter((t) => t.v >= range[0] && t.v <= range[1] && (!unitFilter || unitFilter(t.u)));
         if (cand.length) return cand[cand.length - 1].v;
-        // 除以 10 启发式（OCR 把 77.9% 打成 779x 时）
+        // 2) 除以 10 启发式（OCR 把 77.9% 打成 779x 时）
         const cand10 = tokens.filter((t) => {
           if (unitFilter && !unitFilter(t.u)) return false;
           const v10 = t.v / 10;
           return v10 >= range[0] && v10 <= range[1];
         });
         if (cand10.length) return cand10[cand10.length - 1].v / 10;
+        // 3) 兜底：不要求单位
+        if (allowNoUnit !== false) {
+          const candNoU = tokens.filter((t) => t.v >= range[0] && t.v <= range[1]);
+          if (candNoU.length) return candNoU[candNoU.length - 1].v;
+        }
         return null;
       };
       for (const kw of kws) {
-        for (let i = 0; i < rows.length; i++) {
-          const r = rows[i];
-          if (!r.textFlat.includes(kw)) continue;
-          let v = tryRow(r); if (v != null) return v;
-          if (i > 0) { v = tryRow(rows[i - 1]); if (v != null) return v; }
-          if (i + 1 < rows.length) { v = tryRow(rows[i + 1]); if (v != null) return v; }
+        const labels = rowsIn.filter((r) => r.textFlat && r.textFlat.includes(kw));
+        for (const lab of labels) {
+          // A) 关键词行自身就带数字（如「体脂率18.0%」挤在一行）
+          let v = pick(lab);
+          if (v != null) return v;
+          // B) 邻域行：按「x 列重叠度」降序 + 「y 距离」升序择优
+          //    只认同一列（左列 BMI 绝不会被右列体脂率标签选中）
+          const cands = rowsIn
+            .filter((r) => r !== lab && r.tokens && r.tokens.length && Math.abs(r.y - lab.y) < 0.09)
+            .map((r) => ({ r, dy: Math.abs(r.y - lab.y), ov: xOverlapRatio(r, lab) }))
+            .filter((c) => c.ov >= 0.3 || (c.ov > 0 && c.dy < 0.035))
+            .sort((a, b) => (b.ov - a.ov) || (a.dy - b.dy));
+          for (const c of cands) {
+            v = pick(c.r);
+            if (v != null) return v;
+          }
+          // C) 拿不到列重叠（如标签与数值分离较远）时的旧逻辑：紧邻行
+          const idx = rowsIn.indexOf(lab);
+          if (idx > 0) { v = pick(rowsIn[idx - 1]); if (v != null) return v; }
+          if (idx + 1 < rowsIn.length) { v = pick(rowsIn[idx + 1]); if (v != null) return v; }
         }
       }
       return null;
     };
 
-    // ===== 第 1 层：基于 Tesseract lines 的行级空间提取 =====
-    if (lines && imgHeight) {
-      const rows = lines
-        .filter((l) => l.text && l.text.trim())
-        .map((l) => ({
-          y: ((l.bbox.y0 + l.bbox.y1) / 2) / imgHeight,
-          text: l.text.trim(),
-          textFlat: l.text.replace(/\s+/g, ""),
-          tokens: extractTokens(l.text),
-        }));
-
+    // ===== 第 1 层：行级空间提取 =====
+    if (rows.length) {
       // 过滤掉顶部 6% 区域（手机状态栏：时间/信号/电池）
-      const dataRows = rows.filter((r) => r.y >= 0.06);
+      let dataRows = rows.filter((r) => r.y >= 0.06);
+
+      // 行级合并预处理：PP-OCR 常把「66.5」拆成「66」+「.5」两行
+      // 检测 textFlat 以「.」开头的 row，把它拼到与之同基线（y0N 距离 < 3%）且 x 紧邻的「前一个数字 row」
+      const mergedSet = new Set();
+      for (let i = 0; i < dataRows.length; i++) {
+        const r = dataRows[i];
+        if (!r.textFlat || !r.textFlat.startsWith(".")) continue;
+        // 数字部分（如 .5 → 5）
+        const fragMatch = r.textFlat.match(/^\.(\d+)$/);
+        if (!fragMatch) continue;
+        // 找前一个数字 row（同基线 + x 紧邻）。仅当 prev 自身含数字 token 才算"数字 row"，
+        // 否则 "kg"/"标准" 等单位/标签行会被错误合并。
+        for (let j = i - 1; j >= Math.max(0, i - 4); j--) {
+          const prev = dataRows[j];
+          if (mergedSet.has(j)) continue;
+          if (!prev.textFlat) continue;
+          if (!prev.tokens || prev.tokens.length === 0) continue; // 必须是数字行
+          // 基线差 < 5% 或 y 中心差 < 4%
+          if (Math.abs(prev.y1N - r.y0N) > 0.05 && Math.abs(prev.y - r.y) > 0.04) continue;
+          if (!(r.x0N < prev.x1N + 0.5)) continue; // 紧邻或同段
+          // 拼接：prev.text + r.text（保留原样）
+          prev.text = prev.text + r.text;
+          prev.textFlat = prev.text.replace(/\s+/g, "");
+          prev.tokens = extractTokens(prev.text);
+          prev.x1N = Math.max(prev.x1N, r.x1N);
+          prev.y0N = Math.min(prev.y0N, r.y0N);
+          prev.y1N = Math.max(prev.y1N, r.y1N);
+          prev.y = (prev.y0N + prev.y1N) / 2;
+          mergedSet.add(i);
+          break;
+        }
+      }
+      // 移除已被合并掉的"碎"行（仅含 ".X" 的孤立行）
+      if (mergedSet.size) {
+        dataRows = dataRows.filter((_, i) => !mergedSet.has(i));
+      }
 
       // 体脂率（5~50，% 类单位优先）
       out.fatRate = findByKw(dataRows, ["体脂率", "体脂", "脂率"], [5, 50], isPct);
       // 肌肉率（50~100，% 类单位）
       out.muscleRate = findByKw(dataRows, ["肌肉率"], [50, 100], isPct);
       // 体水份量（25~65，kg 类单位优先；无单位兜底）
-      out.waterMass = findByKw(dataRows, ["体水分量", "体水份量", "水分量", "水分"], [25, 65], isKg)
-        || findByKw(dataRows, ["体水分量", "体水份量", "水分量", "水分"], [25, 65]);
+      out.waterMass = findByKw(dataRows, ["体水分量", "体水份量", "水分量", "水分"], [25, 65], isKg, true);
       // OCR 常把"体水分量"打成"全"等错字，关键词失效时退到"中部唯一 [25,65] 数字"启发式
       if (out.waterMass == null) {
         for (const r of dataRows) {
@@ -1013,15 +1313,19 @@
     }
 
     // ===== 第 2 层：纯文本兜底（关键词匹配 + 数值范围启发式） =====
-    const tFlat = (text || "").replace(/\s+/g, "");
-    // 把整段当成一行（含噪声行）
-    const allTokens = extractTokens(text || "");
-    const cleanTokens = allTokens.filter((t) => !isNoiseNumber(text || "", t.v));
-    const tRows = [{ textFlat: tFlat, text: text || "", tokens: cleanTokens }];
+    const tFlat = (fullText || "").replace(/\s+/g, "");
+    const allTokens = extractTokens(fullText || "");
+    const cleanTokens = allTokens.filter((t) => !isNoiseNumber(fullText || "", t.v));
+    // 纯文本兜底没有坐标概念：给整行铺满 x 轴，避免 xOverlapRatio 算出 NaN
+    const tRows = [{ textFlat: tFlat, text: fullText || "", tokens: cleanTokens, y: 0.5, y0N: 0, y1N: 1, x0N: 0, x1N: 1 }];
+    // 「全文里第一个落在数值区间的数」是纯猜，只在拿不到坐标时（rows 为空）才允许用。
+    // 有坐标时第 1 层已经按行列精确定位了，这里再猜只会把无关数字当指标填进去
+    // （实测：报告被截断、页面里根本没有「肌肉率」时，它会把日期里的 55 当成肌肉率）。
+    const allowGuess = rows.length === 0;
 
     if (out.fatRate == null) {
       let fr = findByKw(tRows, ["体脂率", "体脂", "脂率"], [5, 50], isPct);
-      if (fr == null) {
+      if (fr == null && allowGuess) {
         const small = cleanTokens.filter((x) => x.v > 5 && x.v < 50);
         if (small.length) fr = small[0].v;
       }
@@ -1029,7 +1333,7 @@
     }
     if (out.muscleRate == null) {
       let mr = findByKw(tRows, ["肌肉率"], [50, 100], isPct);
-      if (mr == null) {
+      if (mr == null && allowGuess) {
         const big = cleanTokens.filter((x) => x.v >= 50 && x.v < 100);
         if (big.length) mr = big[0].v;
       }
@@ -1037,7 +1341,7 @@
     }
     if (out.waterMass == null) {
       let wm = findByKw(tRows, ["体水分量", "体水份量", "水分量", "水分"], [25, 65], isKg);
-      if (wm == null) {
+      if (wm == null && allowGuess) {
         const cand = cleanTokens.filter((x) => x.v >= 25 && x.v <= 65 && x.v !== out.weight && x.v !== out.muscleRate);
         if (cand.length) wm = cand[0].v;
       }
@@ -1045,7 +1349,7 @@
     }
     if (out.weight == null) {
       let w = findByKw(tRows, ["体重"], [45, 300], isKg);
-      if (w == null) {
+      if (w == null && allowGuess) {
         const kg = cleanTokens.filter((x) => x.v >= 45 && x.v <= 300 && x.v !== out.waterMass);
         if (kg.length) w = Math.max(...kg.map((x) => x.v));
       }
@@ -1054,7 +1358,7 @@
 
     return out;
   }
-  if (typeof window !== "undefined") { window.__ensureTesseract = ensureTesseract; window.__extractBodyFromOCR = extractBodyFromOCR; }
+  if (typeof window !== "undefined") { window.__ensureTesseract = ensureTesseract; window.__ensurePPOCREngine = ensurePPOCREngine; window.__extractBodyFromOCR = extractBodyFromOCR; }
 
   /* ============ 渲染：总览 ============ */
   function renderOverview() {
@@ -1221,6 +1525,11 @@
         <div class="fld"><label>肌肉 %</label><input type="number" id="qwM" step="0.1" placeholder="0"></div>
         <div class="fld"><label>体水份量 kg</label><input type="number" id="qwWater" step="0.1" placeholder="0"></div>
       </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;">
+        <button class="btn btn-sm btn-ghost" id="qwUploadBtn">📷 上传秤截图识别</button>
+        <input type="file" id="qwImgInput" accept="image/*" style="display:none;">
+        <span id="qwOcrHint" class="card-sub" style="flex:1;min-width:120px;">识别引擎：PP-OCRv4 → Tesseract</span>
+      </div>
       <button class="btn btn-primary w-full mt-2" id="qwSave">保存</button>`);
     $("#qwSave").onclick = () => {
       const date = $("#qwDate").value, w = parseFloat($("#qwW").value);
@@ -1231,6 +1540,90 @@
       D.nutrition.weight.push({ date, weight: w, fatRate: parseFloat($("#qwF").value) || 0, muscleRate: parseFloat($("#qwM").value) || 0, waterMass: isNaN(qwWaterVal) ? 0 : qwWaterVal });
       save(); renderAll(); toast("体重已保存 · 已同步目标"); closeModal();
     };
+
+    // 一键直达 OCR：先 PP-OCRv4，失败/全空时回退 Tesseract
+    const qwUploadBtn = $("#qwUploadBtn"), qwImgInput = $("#qwImgInput"), qwOcrHint = $("#qwOcrHint");
+    if (qwUploadBtn && qwImgInput) {
+      qwUploadBtn.onclick = () => qwImgInput.click();
+      qwImgInput.onchange = async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const setHint = (s, color) => { if (qwOcrHint) { qwOcrHint.textContent = s; qwOcrHint.style.color = color || "var(--ink-3)"; } };
+        const fillResult = (r, engineLabel) => {
+          let filled = 0;
+          if (r.weight != null) { $("#qwW").value = r.weight; filled++; }
+          if (r.fatRate != null) { $("#qwF").value = r.fatRate; filled++; }
+          if (r.muscleRate != null) { $("#qwM").value = r.muscleRate; filled++; }
+          if (r.waterMass != null) { $("#qwWater").value = r.waterMass; filled++; }
+          const missing = ["weight", "fatRate", "muscleRate", "waterMass"].filter((k) => r[k] == null);
+          if (filled > 0) {
+            const msg = missing.length
+              ? `✅ [${engineLabel}] 已识别 ${filled}/4 项${missing.length ? "（缺" + missing.length + "项可手动补）" : ""}，核对后保存`
+              : `✅ [${engineLabel}] 已识别全部 ${filled} 项，核对后保存`;
+            setHint(msg, missing.length ? "#f59e0b" : "#10b981");
+            toast(msg);
+          } else {
+            setHint("⚠️ 未识别到有效指标，请手动填写", "#f59e0b");
+            toast("未识别到有效指标，请手动填写", "warn");
+          }
+        };
+        try {
+          setHint("⏳ 正在预处理图片…");
+          const processed = await preprocessScaleImage(file);
+          let r = { weight: null, fatRate: null, muscleRate: null, waterMass: null };
+          let engineLabel = "";
+          try {
+            setHint("⏳ 加载高精度识别引擎（首次较慢）…");
+            const pp = await ensurePPOCREngine();
+            setHint("⏳ PP-OCRv4 识别中…");
+            const items = await pp.recognize(processed);
+            console.log("[OCR-qw/PP-OCRv4] items:", items.length);
+            r = extractBodyFromOCR(items, processed.height);
+            engineLabel = "PP-OCRv4";
+            // 识别到的是 App 自己的页面：换引擎也是同样结果，直接提示，别浪费 30 秒兜底
+            if (r.__page === "app") {
+              setHint("⚠️ 这是 App 自己的页面，请上传体脂秤的「体重报告」截图", "#f59e0b");
+              toast("请上传体脂秤的报告截图，不是 App 页面", "warn");
+              return;
+            }
+            if (r.weight == null && r.fatRate == null && r.muscleRate == null && r.waterMass == null) {
+              throw new Error("PP-OCRv4 全部为空，回退 Tesseract");
+            }
+          } catch (e1) {
+            console.warn("[OCR-qw] PP-OCRv4 失败，回退 Tesseract:", e1);
+            setHint("⏳ 加载 Tesseract 兜底引擎…");
+            await ensureTesseract();
+            setHint("⏳ Tesseract 识别中…");
+            const tessCanvas = processed.__isDark ? invertCanvas(processed) : processed;
+            const result = await window.__tessWorker.recognize(tessCanvas);
+            const text = result && result.data ? result.data.text : "";
+            const lines = result && result.data ? result.data.lines : null;
+            r = extractBodyFromOCR(text, lines, processed.height);
+            engineLabel = "Tesseract";
+            if (r.weight == null) {
+              try {
+                setHint("⏳ Tesseract 再次识别体重…");
+                const topCanvas = cropCanvasTop(processed, 0.35);
+                const topRes = await window.__tessWorker.recognize(topCanvas);
+                const topW = extractWeightFromTop(
+                  topRes && topRes.data ? topRes.data.text : "",
+                  topRes && topRes.data ? topRes.data.lines : null,
+                  topCanvas.height
+                );
+                if (topW != null) { r.weight = topW; console.log("[OCR-qw/Tesseract] 顶部二次识别得到体重:", topW); }
+              } catch (e2) { console.warn("[OCR-qw] 顶部二次 OCR 失败:", e2); }
+            }
+          }
+          fillResult(r, engineLabel);
+        } catch (err) {
+          console.error("[OCR-qw] 识别失败:", err);
+          setHint("❌ 识别失败，请手动填写", "#f43f5e");
+          toast("识别失败，请手动填写", "warn");
+        } finally {
+          qwImgInput.value = "";
+        }
+      };
+    }
   }
   function punchNow(key) {
     const t = effectiveToday(); punchRec(t).times[key] = nowHM(); save(); renderPunch(); renderOverview();
@@ -2185,7 +2578,9 @@
       save(); renderWeight(); toast("体重已保存 · 已同步身体参数并重算目标");
     };
 
-    /* ---- 上传秤截图 → OCR 识别四个指标 → 填入表单 ---- */
+    /* ---- 上传秤截图 → OCR 识别四个指标 → 填入表单 ----
+     * 流程：先尝试高精度 PP-OCRv4 ONNX 引擎（自托管模型，首次 ~19MB + PWA 缓存），
+     *       失败/慢/被用户取消时回退 Tesseract.js。 */
     const wUploadBtn = $("#wUploadBtn"), wImgInput = $("#wImgInput"), wOcrHint = $("#wOcrHint");
     if (wUploadBtn && wImgInput) {
       wUploadBtn.onclick = () => wImgInput.click();
@@ -2193,40 +2588,7 @@
         const file = e.target.files && e.target.files[0];
         if (!file) return;
         const setHint = (s, color) => { if (wOcrHint) { wOcrHint.textContent = s; wOcrHint.style.color = color || "var(--ink-3)"; } };
-        try {
-          setHint("⏳ 正在加载识别引擎…");
-          await ensureTesseract();
-          setHint("⏳ 识别中（首次较慢，请稍候）…");
-          // 先预处理图片（深色背景反色、放大提升小字识别），再识别
-          const processed = await preprocessScaleImage(file);
-          const result = await window.__tessWorker.recognize(processed);
-          const text = result && result.data ? result.data.text : "";
-          const lines = result && result.data ? result.data.lines : null;
-          const imgH = processed.height;
-          console.log("[OCR] 识别文本:", text);
-          const r = extractBodyFromOCR(text, lines, imgH);
-
-          // 顶部 35% 二次 OCR：体重是大字号+阴影，主识别常常失败（"66.2"→"6 6 7"），
-          // 单独裁剪后 Tesseract 表现更稳定
-          if (r.weight == null) {
-            try {
-              setHint("⏳ 再次识别体重…");
-              const topCanvas = cropCanvasTop(processed, 0.35);
-              const topRes = await window.__tessWorker.recognize(topCanvas);
-              const topW = extractWeightFromTop(
-                topRes && topRes.data ? topRes.data.text : "",
-                topRes && topRes.data ? topRes.data.lines : null,
-                topCanvas.height
-              );
-              if (topW != null) {
-                r.weight = topW;
-                console.log("[OCR] 顶部二次识别得到体重:", topW);
-              }
-            } catch (e) {
-              console.warn("[OCR] 顶部二次 OCR 失败:", e);
-            }
-          }
-
+        const fillResult = (r, engineLabel) => {
           let filled = 0;
           if (r.weight != null) { $("#wWeight").value = r.weight; filled++; }
           if (r.fatRate != null) { $("#wFat").value = r.fatRate; filled++; }
@@ -2235,14 +2597,72 @@
           const missing = ["weight", "fatRate", "muscleRate", "waterMass"].filter((k) => r[k] == null);
           if (filled > 0) {
             const msg = missing.length
-              ? `✅ 已识别 ${filled}/4 项${missing.length ? "（缺" + missing.length + "项可手动补）" : ""}，请核对后保存`
-              : `✅ 已识别全部 ${filled} 项，请核对后保存`;
+              ? `✅ [${engineLabel}] 已识别 ${filled}/4 项${missing.length ? "（缺" + missing.length + "项可手动补）" : ""}，请核对后保存`
+              : `✅ [${engineLabel}] 已识别全部 ${filled} 项，请核对后保存`;
             setHint(msg, missing.length ? "#f59e0b" : "#10b981");
             toast(msg);
           } else {
             setHint("⚠️ 未识别到有效指标，请手动填写", "#f59e0b");
             toast("未识别到有效指标，请手动填写", "warn");
           }
+        };
+
+        try {
+          setHint("⏳ 正在预处理图片…");
+          const processed = await preprocessScaleImage(file);
+          let r = { weight: null, fatRate: null, muscleRate: null, waterMass: null };
+          let engineLabel = "";
+
+          // ===== 第 1 引擎：PP-OCRv4 ONNX =====
+          try {
+            setHint("⏳ 加载高精度识别引擎（首次较慢）…");
+            const pp = await ensurePPOCREngine();
+            setHint("⏳ PP-OCRv4 识别中…");
+            const items = await pp.recognize(processed);
+            console.log("[OCR/PP-OCRv4] items:", items.length, items.slice(0, 5));
+            r = extractBodyFromOCR(items, processed.height);
+            engineLabel = "PP-OCRv4";
+            // 识别到的是 App 自己的页面：换引擎也是同样结果，直接提示，别浪费 30 秒兜底
+            if (r.__page === "app") {
+              setHint("⚠️ 这是 App 自己的页面，请上传体脂秤的「体重报告」截图", "#f59e0b");
+              toast("请上传体脂秤的报告截图，不是 App 页面", "warn");
+              return;
+            }
+            // 至少识别出 1 项才算成功，否则回退 Tesseract
+            if (r.weight == null && r.fatRate == null && r.muscleRate == null && r.waterMass == null) {
+              throw new Error("PP-OCRv4 全部为空，回退 Tesseract");
+            }
+          } catch (e1) {
+            console.warn("[OCR] PP-OCRv4 失败，回退 Tesseract:", e1);
+            // ===== 第 2 引擎：Tesseract.js =====
+            setHint("⏳ 加载 Tesseract 兜底引擎…");
+            await ensureTesseract();
+            setHint("⏳ Tesseract 识别中…");
+            const tessCanvas = processed.__isDark ? invertCanvas(processed) : processed;
+            const result = await window.__tessWorker.recognize(tessCanvas);
+            const text = result && result.data ? result.data.text : "";
+            const lines = result && result.data ? result.data.lines : null;
+            const imgH = processed.height;
+            console.log("[OCR/Tesseract] text:", text);
+            r = extractBodyFromOCR(text, lines, imgH);
+            engineLabel = "Tesseract";
+            // 顶部 35% 二次 OCR：抢救 Tesseract 拿不到体重的情况
+            if (r.weight == null) {
+              try {
+                setHint("⏳ Tesseract 再次识别体重…");
+                const topCanvas = cropCanvasTop(processed, 0.35);
+                const topRes = await window.__tessWorker.recognize(topCanvas);
+                const topW = extractWeightFromTop(
+                  topRes && topRes.data ? topRes.data.text : "",
+                  topRes && topRes.data ? topRes.data.lines : null,
+                  topCanvas.height
+                );
+                if (topW != null) { r.weight = topW; console.log("[OCR/Tesseract] 顶部二次识别得到体重:", topW); }
+              } catch (e2) { console.warn("[OCR] 顶部二次 OCR 失败:", e2); }
+            }
+          }
+
+          fillResult(r, engineLabel);
         } catch (err) {
           console.error("[OCR] 识别失败:", err);
           setHint("❌ 识别失败，请手动填写", "#f43f5e");
