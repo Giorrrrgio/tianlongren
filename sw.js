@@ -1,11 +1,14 @@
 /* 天龙人 Service Worker
  * 缓存策略：Cache First（离线优先，后台静默更新）
- * 版本：tlr-v6
+ * 版本：tlr-v7
  */
 
-const CACHE_NAME = 'tlr-v6';
+const CACHE_NAME = 'tlr-v7';
 
 // 核心资源：小、必需。用 addAll 一次性预缓存。
+// v7 变更：体重识别已从「截图 OCR」改为「粘贴文本解析」，16MB 的 PP-OCRv4 模型
+// 和 Tesseract / onnxruntime / opencv 等 CDN 依赖全部下线，不再预缓存也不再运行时缓存。
+// 换版本号是为了让老客户端 activate 时把含模型的旧缓存清掉，腾出配额。
 const CORE_ASSETS = [
   '/tianlongren/',
   '/tianlongren/index.html',
@@ -17,25 +20,6 @@ const CORE_ASSETS = [
   '/tianlongren/icon-512-v2.png',
 ];
 
-// PP-OCRv4 ONNX 模型（自托管到 GitHub Pages，国内可达），合计约 16MB。
-// 刻意与核心资源分开：cache.addAll 是「全有或全无」，只要这 4 个里有 1 个拉取失败
-// （弱网 / 断点 / 配额超限），整个 install 就失败，连首页都缓存不上 —— 离线直接废掉。
-// 模型只是加速二次识别，缺了可以现拉，所以逐个 add 且失败不致命。
-const OCR_MODEL_ASSETS = [
-  '/tianlongren/models/ocr/det.onnx',
-  '/tianlongren/models/ocr/rec.onnx',
-  '/tianlongren/models/ocr/cls.onnx',
-  '/tianlongren/models/ocr/ppocr_keys_v1.txt',
-];
-
-// OCR 引擎 + Tesseract CDN：跨域资源需要运行时缓存（install 时无法预缓存）
-const OCR_CDN_HOSTS = [
-  'cdn.jsdelivr.net',
-  'esm.sh',
-  'unpkg.com',
-  'fastly.jsdelivr.net',
-];
-
 // 安装：预缓存静态资源
 self.addEventListener('install', (event) => {
   console.log('[SW] 安装中...');
@@ -43,13 +27,6 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_NAME).then(async (cache) => {
       console.log('[SW] 缓存核心资源');
       await cache.addAll(CORE_ASSETS);
-      // 模型尽力而为：单个失败不影响离线可用性，下次用到时再缓存
-      await Promise.all(OCR_MODEL_ASSETS.map(async (u) => {
-        try {
-          const resp = await fetch(u);
-          if (resp.ok) await cache.put(u, resp.clone());
-        } catch (e) { console.warn('[SW] OCR 模型预缓存跳过:', u, e); }
-      }));
     })
   );
   self.skipWaiting(); // 激活新的 SW
@@ -83,27 +60,10 @@ self.addEventListener('fetch', (event) => {
   // 不缓存 API 请求（如果有）
   if (request.url.includes('/api/')) return;
 
+  // 只处理同源资源：跨域 CDN 一律放行（OCR 下线后已无跨域依赖）
   const url = new URL(request.url);
-  const isSameOrigin = url.origin === self.location.origin;
-  const isOCRCdn = OCR_CDN_HOSTS.includes(url.hostname);
+  if (url.origin !== self.location.origin) return;
 
-  // 跨域 CDN 资源：仅 OCR 相关的（onnx-ocr-js / onnxruntime-web / opencv-js / tesseract）
-  if (isOCRCdn) {
-    // 用 stale-while-revalidate 模式：先返回缓存（秒开），后台更新
-    event.respondWith(
-      caches.open(CACHE_NAME).then(async (cache) => {
-        const cached = await cache.match(request);
-        const network = fetch(request).then((resp) => {
-          if (resp.ok) cache.put(request, resp.clone());
-          return resp;
-        }).catch(() => cached);
-        return cached || network;
-      })
-    );
-    return;
-  }
-
-  // 同源资源：Cache First
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
       if (cachedResponse) {
