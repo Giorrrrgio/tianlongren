@@ -341,7 +341,7 @@
         water: {},
         drinks: [
           { id: "d1", name: "水", water: 200, caffeine: 0, chlorogenic: 0, theophylline: 0 },
-          { id: "d4", name: "水(大杯)", water: 500, caffeine: 0, chlorogenic: 0, theophylline: 0 },
+          { id: "d4", name: "水(大杯)", water: 700, caffeine: 0, chlorogenic: 0, theophylline: 0 },
           { id: "d2", name: "茶", water: 200, caffeine: 6.67, chlorogenic: 0, theophylline: 4.17 },
           { id: "d3", name: "咖啡", water: 250, caffeine: 60, chlorogenic: 60, theophylline: 0 },
         ],
@@ -404,8 +404,10 @@
     if (!m.nutrition) m.nutrition = {};
     if (!m.nutrition.daily) m.nutrition.daily = {};
     if (!m.nutrition.drinks) m.nutrition.drinks = [];
-    /* 确保「水(大杯) 500ml」始终存在（老存档补全） */
-    if (!m.nutrition.drinks.some((d) => d.id === "d4")) m.nutrition.drinks.push({ id: "d4", name: "水(大杯)", water: 500, caffeine: 0, chlorogenic: 0, theophylline: 0 });
+    /* 确保「水(大杯)」始终存在且为 700ml（老存档补全 + 容量升级迁移） */
+    const d4 = m.nutrition.drinks.find((d) => d.id === "d4");
+    if (!d4) m.nutrition.drinks.push({ id: "d4", name: "水(大杯)", water: 700, caffeine: 0, chlorogenic: 0, theophylline: 0 });
+    else if (d4.water === 500) d4.water = 700; // 由 500ml 升级到 700ml
     if (!m.nutrition.weight) m.nutrition.weight = [];
     if (!m.fitness) m.fitness = {};
     if (!m.fitness.actions) m.fitness.actions = {};
