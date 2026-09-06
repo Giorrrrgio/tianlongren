@@ -1343,13 +1343,18 @@
       if (/^\d+(\.\d+)?$/.test(s)) return s;
       const single = CN[s]; if (single !== undefined) return single;
       if (/^十/.test(s)) s = "一" + s;
-      let sec = 0, has = false;
+      // 修正：原来用 sec 直接覆盖，导致「十一」→1、「十二」→2 这类两位数全错。
+      // 必须用「进位累加 sec + 当前位 tmp」两段保存：十位相乘累加，个位最后补上。
+      let sec = 0, tmp = 0, has = false;
       for (const ch of s) {
-        if (CN[ch] !== undefined) { sec = (ch === "半") ? 0.5 : CN[ch]; has = true; }
-        else if (ch === "十") { sec = (sec === 0 ? 1 : sec) * 10; }
+        // 必须 parseFloat：CN 的值是字符串（"1"），直接赋值会让最后的 sec + tmp
+        // 变成「10 + "1" = "101"」字符串拼接（「十一只」就因此变成 101 只）
+        if (CN[ch] !== undefined) { tmp = parseFloat(CN[ch]); has = true; }
+        else if (ch === "十") { sec += (tmp === 0 ? 1 : tmp) * 10; tmp = 0; has = true; }
+        else if (ch === "半") { tmp += 0.5; has = true; }
         else return s;
       }
-      return has ? String(sec) : s;
+      return has ? String(sec + tmp) : s;
     }
 
     const cal = numFor("(?:总热量|热量|能量|热值|大卡|卡路里|calories?)", CAL_UNIT) || numForUnit(CAL_UNIT);
@@ -1444,13 +1449,18 @@
       if (/^\d+(\.\d+)?$/.test(s)) return s;
       const single = CN[s]; if (single !== undefined) return single;
       if (/^十/.test(s)) s = "一" + s;
-      let sec = 0, has = false;
+      // 修正：原来用 sec 直接覆盖，导致「十一」→1、「十二」→2 这类两位数全错。
+      // 必须用「进位累加 sec + 当前位 tmp」两段保存：十位相乘累加，个位最后补上。
+      let sec = 0, tmp = 0, has = false;
       for (const ch of s) {
-        if (CN[ch] !== undefined) { sec = (ch === "半") ? 0.5 : CN[ch]; has = true; }
-        else if (ch === "十") { sec = (sec === 0 ? 1 : sec) * 10; }
+        // 必须 parseFloat：CN 的值是字符串（"1"），直接赋值会让最后的 sec + tmp
+        // 变成「10 + "1" = "101"」字符串拼接（「十一只」就因此变成 101 只）
+        if (CN[ch] !== undefined) { tmp = parseFloat(CN[ch]); has = true; }
+        else if (ch === "十") { sec += (tmp === 0 ? 1 : tmp) * 10; tmp = 0; has = true; }
+        else if (ch === "半") { tmp += 0.5; has = true; }
         else return s;
       }
-      return has ? String(sec) : s;
+      return has ? String(sec + tmp) : s;
     }
 
     // 提取汇总营养值（如果有）
@@ -1544,9 +1554,31 @@
     // ===== 单位定义 =====
     // REAL_UNIT: 真实量词（可数/可称重），PAT_MAIN 用
     // 注意：包含足够多的中文量词，避免类似"豆豉排骨3段"的丢失
-    const REAL_UNIT = "(?:g|克|个|颗|片|块|碗|盒|根|条|只|枚|份|串|把|杯|袋|罐|瓶|勺|张|瓣|粒|尾|笼|碟|盘|两|段|节|丁|块|截|块儿|瓣儿|段儿|条儿|块头|坨)";
+    // 补充了 房/锅/屉/听/桶/壶/扎/支 —— 缺「房」时「榴莲1房」整条匹配不到，
+    // 最终一个菜都拆不出来，会掉进下面的兜底分支（那分支原本还崩）。
+    const REAL_UNIT = "(?:g|克|个|颗|片|块|碗|盒|根|条|只|枚|份|串|把|杯|袋|罐|瓶|勺|张|瓣|粒|尾|笼|碟|盘|两|段|节|丁|块|截|块儿|瓣儿|段儿|条儿|块头|坨|房|锅|屉|听|桶|壶|扎|支)";
     const VIRT_UNIT = "(?:口|碗|杯|勺|匙)";
     const CNUM = "(?:\\d+(?:\\.\\d+)?|[零一二两三四五六七八九十半]+)";
+    // DISH_UNIT：供「模式 2」与下面的中文数量词归一化共用。
+    // 之前模式 2 直接引用了 DISH_UNIT 但本函数里从没定义过它（只有
+    // parseNutritionText 内部有同名局部变量）→ 一旦走到模式 2 就抛
+    // ReferenceError，整个识别静默失败。这里补上正式定义。
+    const DISH_UNIT = "(?:g|克|个|颗|片|块|碗|盒|根|条|只|枚|份|串|把|杯|袋|罐|瓶|勺|张|瓣|粒|尾|笼|碟|盘|两|段|节|丁|截|房|锅|屉|听|桶|壶|扎|支|口)";
+
+    /* ===== 预处理：把中文数量词归一成阿拉伯数字 =====
+     * PAT_MAIN 的数量捕获组只认阿拉伯数字，但真实输入大量使用中文数量词
+     * （"半份""一份""四分之一条"）。不先归一就一个都匹配不上。
+     * 顺序很关键：必须先处理「四分之一」这类分数，否则「分之」前后的汉字
+     * 会被后面的简单数字规则先替换掉，分数就废了。 */
+    // ① 分数：四分之一 → 0.25、三分之二 → 0.67
+    foodText = foodText.replace(/([零一二两三四五六七八九十]{1,3})分之([零一二两三四五六七八九十]{1,3})/g, (mm, a, b) => {
+      const va = parseFloat(cnToArabic(a)), vb = parseFloat(cnToArabic(b));
+      if (!isFinite(va) || !isFinite(vb) || va === 0) return mm;
+      return String(Math.round((vb / va) * 100) / 100);
+    });
+    // ② 简单中文数字 + 量词：半份 → 0.5份、一份 → 1份、两口 → 2口
+    //    用「后紧跟量词」做断言，避免误伤菜名里的数字（"五花肉"的"五"后面是"花"不是量词）
+    foodText = foodText.replace(new RegExp("([零一二两三四五六七八九十半]{1,3})(?=" + DISH_UNIT + ")", "g"), (mm) => cnToArabic(mm));
 
     // 数量词前缀：从名称中剥离（"一口莲藕" → "莲藕"，"半碗饭" → "饭"）
     const QTY_PREFIX_RE = /^(?:一?口|半?碗|一?杯|一?勺|少量|少许|一?小?撮|一?点|一?筷|一?手|一?捏|一?片|一?块|一?根|一?只|一?个|一?颗|一?粒|一?瓣|一?张|一?份|一?把|一?串|一?袋|一?罐|一?瓶|一?盒|一?盘|一?碟|一?笼|一?尾|一?条|一两|半两)/;
@@ -1771,8 +1803,26 @@
     const fill = () => {
       const txt = $("#smart").value || "";
       if (!txt.trim()) { toast("请先粘贴文本", "warn"); return; }
-      // 先尝试多菜品解析
-      const meals = parseMultiMealText(txt);
+      // 解析任何一步抛异常都不能让按钮「点了没反应」：多菜品解析挂了就降级到单菜品，
+      // 再不行就明确提示「没能识别」，绝不静默失败。
+      // （历史翻车：parseMultiMealText 曾引用未定义变量抛 ReferenceError，
+      //   这里没有 try/catch，用户看到的就是完全无反应。）
+      let meals = [];
+      try {
+        meals = parseMultiMealText(txt) || [];
+      } catch (e) {
+        console.error("[识别] 多菜品解析异常，降级为单菜品:", e);
+      }
+      if (!meals.length) {
+        try {
+          const one = parseNutritionText(txt);
+          if (one && (one.name || one.cal || one.p)) meals = [one];
+        } catch (e2) { console.error("[识别] 单菜品解析异常:", e2); }
+      }
+      if (!meals.length) {
+        toast("没能自动识别，请手动填写或换个格式粘贴", "warn");
+        return;
+      }
       if (meals.length >= 2) {
         // 多菜品：合并成一条记录，名称用逗号隔开，营养值用汇总
         const allNames = meals.map((m) => m.name).join("，");
