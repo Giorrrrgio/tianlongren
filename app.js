@@ -1287,7 +1287,7 @@
 
     /* ========== 新增：预提取食物名称+份量（如"蛋白粉30g"、"鸡胸肉150g"）========== */
     // 食物名模式：中文/英文单词（2字以上）+ 可选空格/括号 + 数字 + 单位
-    const DISH_PAT = /([\u4e00-\u9fff]{2,}|[A-Za-z]{2,})[\s\(（\[]{0,4}(\d+(?:\.\d+)?)\s*(克|g)\b/gi;
+    const DISH_PAT = /([\u4e00-\u9fff]{2,}|[A-Za-z]+(?:\s+[A-Za-z]+)*)[\s\(（\[]{0,4}(\d+(?:\.\d+)?)\s*(克|g)\b/gi;
     let dishMatch;
     let extractedDish = "";
     let dishEndIndex = -1;
@@ -1368,7 +1368,9 @@
     let name = "";
     // 【优先】如果预提取到了食物名+份量（如"蛋白粉30g"），直接使用
     if (extractedDish && extractedDish.length >= 2 && extractedDish.length <= 50) {
-      name = extractedDish;
+      // 去掉名称末尾的「数量+单位」，只保留菜名（"Grilled chicken 120g" → "Grilled chicken"）
+      const nm = extractedDish.replace(/\s*\d+(?:\.\d+)?\s*(?:克|g|个|颗|片|块|碗|盒|根|条|只|枚|份|串|把|杯|袋|罐|瓶|勺|张|瓣|粒|尾|笼|碟|盘)\s*$/i, "").trim();
+      name = nm || extractedDish;
     }
     // 其次尝试括号内的菜名
     if (!name) {
@@ -1421,10 +1423,17 @@
     // 营养标签行模式：支持 总热量(kcal)：432、蛋白质(g)：85.44、胆固醇(mg):0 等格式
     const NUT_LINE_RE = /^(?:总\s*热量|热量|能量|碳水(?:化合物)?|蛋白质|脂肪|胆固醇|嘌呤|说明)[\s:：(（()\[\]\w\d\.,\-\u4e00-\u9fff：：]+$/im;
     const rawLines = raw.split(/[\n\r;；]+/).map((l) => l.trim()).filter(Boolean);
+    // 阶段0 行过滤：先丢纯营养汇总行，再整体删掉从「备注/说明/注：」起到末尾的备注块
+    // （备注里常含「（稀饭200g、腊肠15g…测算）」这类带重量的括号，若不当备注处理，
+    //  里面的 稀饭200g/腊肠15g 会被误拆成额外菜品，污染菜名）。
+    // 注意：备注行内常含全角分号「；」，按「；」split 会把括号备注拆成两截，
+    //  所以不能用「整行以（开头」的逐行判断，必须按「关键词到末尾」整块删除。
     const foodRawLines = rawLines.filter((l) => !NUT_LINE_RE.test(l));
     let foodTextRaw = foodRawLines.join(" ");
-    // 去掉末尾"说明："及之后的备注
-    foodTextRaw = foodTextRaw.replace(/\s*说明[：:]\s*[\s\S]*$/i, "").trim();
+    // ① 删掉从「备注/说明/注：」起到文本末尾的全部内容（含其后的（…）括号备注）
+    foodTextRaw = foodTextRaw.replace(/\s*(?:备注|说明|注)[：:][\s\S]*$/i, "").trim();
+    // ② 兜底：行尾独立的「（…含重量+测算/估算等备注词…）」括号（无关键词备注时）
+    foodTextRaw = foodTextRaw.replace(/\s*[（(][^()（）]*(?:测算|估算|参考|常规|单人|按|示例|例如)[^()（）]*[）)]\s*$/i, "").trim();
 
     let t = raw;
     // 归一化——用于营养值提取（numFor），需要单行文本
@@ -1827,8 +1836,12 @@
         // 多菜品：合并成一条记录，名称用逗号隔开，营养值用汇总
         const allNames = meals.map((m) => m.name).join("，");
         const hasSummary = meals[0].cal !== "";
+        // 逐项分配后累加会有浮点误差（1486 会变成 1486.0000000000002），
+        // 汇总时必须再舍入一次，否则用户看到的就是一长串小数。
+        const sumOf = (f) => meals.reduce((s, m) => s + (+m[f] || 0), 0);
+        const round1 = (x) => Math.round((+x || 0) * 10) / 10;
         $("#mName").value = allNames;
-        $("#mCal").value = hasSummary ? meals.reduce((s, m) => s + (+m.cal || 0), 0) : "";
+        $("#mCal").value = hasSummary ? round1(sumOf("cal")) : "";
         $("#mC").value   = hasSummary ? meals.reduce((s, m) => s + (+m.c || 0), 0).toFixed(1) : "";
         $("#mP").value   = hasSummary ? meals.reduce((s, m) => s + (+m.p || 0), 0).toFixed(1) : "";
         $("#mF").value   = hasSummary ? meals.reduce((s, m) => s + (+m.f || 0), 0).toFixed(1) : "";
@@ -3272,7 +3285,10 @@
     // 注册 Service Worker
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
+        // 必须用相对路径 './sw.js'：站点部署在 /tianlongren/ 子目录，
+        // 写绝对路径 '/sw.js' 会去请求站点根的 giorrrrgio.github.io/sw.js → 404，
+        // 注册被 .catch 静默吞掉，PWA 离线能力其实一直没生效过。
+        navigator.serviceWorker.register('./sw.js')
           .then((reg) => console.log('[SW] 注册成功，scope:', reg.scope))
           .catch((err) => console.warn('[SW] 注册失败:', err));
       });
