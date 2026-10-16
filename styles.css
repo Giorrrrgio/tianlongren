@@ -621,9 +621,10 @@ body.fin-locked .chart-box::after { content:"🔒 财务已加密"; position:abs
 
 /* ========== 总览：大号日期 + 实时时钟 ========== */
 .ov-date { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 20px 24px; box-shadow: var(--sh); display:flex; align-items:center; justify-content:space-between; gap:16px; }
-.ov-date-left { display:flex; flex-direction:column; gap:2px; }
+.ov-date-left { display:flex; flex-direction:column; gap:2px; flex:1 1 auto; min-width:0; }
 .ov-date-d { font-size: 46px; font-weight: 800; line-height: 1; letter-spacing: -1px; font-family: var(--font-num); }
-.ov-date-m { font-size: 15px; color: var(--text-2); font-weight: 600; }
+/* nowrap：时钟每秒变宽变窄时，日期绝不能在一行/两行之间跳 */
+.ov-date-m { font-size: 15px; color: var(--text-2); font-weight: 600; white-space: nowrap; }
 .ov-date-hi { font-size: 13px; color: var(--text-2); margin-top: 6px; }
 
 /* 实时时钟 */
@@ -637,6 +638,7 @@ body.fin-locked .chart-box::after { content:"🔒 财务已加密"; position:abs
   border-radius: var(--r-md);
   padding: 10px 18px;
   min-width: auto;
+  flex: 0 0 auto; /* 不被 flex 压缩变形 */
   position: relative;
   overflow: hidden;
 }
@@ -654,6 +656,10 @@ body.fin-locked .chart-box::after { content:"🔒 财务已加密"; position:abs
   font-family: var(--font-num);
   line-height: 1;
   color: var(--text-1);
+  /* 等宽数字：否则秒数在 1/8 等不同字形间变化时整串宽度会变，
+     撑得时钟容器忽宽忽窄，把左侧日期挤得「一行↔两行」反复跳。 */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
 }
 /* 暗色主题下时钟用靛蓝强调 */
 [data-theme="dark"] .ov-clock-time {
@@ -667,6 +673,11 @@ body.fin-locked .chart-box::after { content:"🔒 财务已加密"; position:abs
   opacity: 1;
   vertical-align: baseline;
   margin-left: 0;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  display: inline-block;
+  min-width: 2ch; /* 秒恒占两位，杜绝「9→10」这类进位时跳宽 */
+  text-align: center;
 }
 
 /* ========== 总览：今日营养 ========== */
