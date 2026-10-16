@@ -155,7 +155,25 @@
      note 为空时回落到分类名，保证非必要列表里看得出这钱花在哪。 */
   function pushFriv(date, note, amt) {
     rolloverFriv();
-    frivItems().push({ id: "f" + Date.now(), date, note: note || "非必要支出", amt });
+    const it = { id: "f" + Date.now() + Math.random().toString(36).slice(2, 6), date, note: note || "非必要支出", amt };
+    frivItems().push(it);
+    return it.id;   // 返回 id，记账记录据此「认领」这条非必要，后续编辑才能同步改
+  }
+  /* 解除记账 ↔ 非必要的绑定：删掉对应的非必要条目 */
+  function unlinkFriv(id) {
+    if (!id) return false;
+    const arr = frivItems();
+    const i = arr.findIndex((x) => x.id === id);
+    if (i < 0) return false;
+    arr.splice(i, 1);
+    return true;
+  }
+  /* 同步更新已绑定的非必要条目（改金额/改日期/改备注时） */
+  function syncFriv(id, date, note, amt) {
+    if (!id) return;
+    const it = frivItems().find((x) => x.id === id);
+    if (!it) return;
+    it.date = date; it.note = note || it.note; it.amt = amt;
   }
   /* 只刷新「非必要开支」卡片的合计与列表，不重绘整个财务页——
      否则记账后表单（日期/账户）会被重置，连续记账很难受。 */
@@ -2625,22 +2643,118 @@
   function popAcct() { $("#tAcct").innerHTML = Object.keys(D.finance.bals).concat(["其他"]).map((a) => `<option>${a}</option>`).join(""); }
   function renderTxList() {
     const tx = txnsOf(fCurMonth).slice().sort((a, b) => b.date.localeCompare(a.date) || (b.ts || 0) - (a.ts || 0));
-    $("#txList").innerHTML = tx.length ? tx.map((t) => `<div class="row"><div class="row-ic" style="background:${t.type === "income" ? "#d1fae5" : "#ffe4e6"};color:${t.type === "income" ? "#047857" : "#be123c"};">${t.type === "income" ? "收" : "支"}</div><div class="row-main"><div class="row-title">${catIcon(t.cat)} ${esc(t.cat)} · ${esc(t.note || "—")}</div><div class="row-meta">${t.date.slice(5)} · ${esc(t.acct || "其他")}</div></div><span class="num" style="color:${t.type === "income" ? "#047857" : "#be123c"};font-weight:800;">${t.type === "income" ? "+" : "-"}${MM2(t.amt)}</span><button class="mi-del" data-deltx="${t.id}">×</button></div>`).join("") : `<div class="empty">本月暂无记录</div>`;
-    $$("#txList [data-deltx]").forEach((b) => b.onclick = () => { const id = b.dataset.deltx; const txn = D.finance.txns.find((x) => x.id === id); if (txn) { if (txn.acct && D.finance.bals[txn.acct]) D.finance.bals[txn.acct] += txn.type === "expense" ? +txn.amt : -txn.amt; } D.finance.txns = D.finance.txns.filter((x) => x.id !== id); save(); renderFinance(); renderOverview(); toast("已删除"); });
+    $("#txList").innerHTML = tx.length ? tx.map((t) => `<div class="row"><div class="row-ic" style="background:${t.type === "income" ? "#d1fae5" : "#ffe4e6"};color:${t.type === "income" ? "#047857" : "#be123c"};">${t.type === "income" ? "收" : "支"}</div><div class="row-main"><div class="row-title">${catIcon(t.cat)} ${esc(t.cat)} · ${esc(t.note || "—")}</div><div class="row-meta">${t.date.slice(5)} · ${esc(t.acct || "其他")}</div></div><span class="num" style="color:${t.type === "income" ? "#047857" : "#be123c"};font-weight:800;">${t.type === "income" ? "+" : "-"}${MM2(t.amt)}</span><div class="row-acts"><button class="mi-edit" data-edittx="${t.id}" title="编辑这条记录">✎</button><button class="mi-del" data-deltx="${t.id}" title="删除这条记录">×</button></div></div>`).join("") : `<div class="empty">本月暂无记录</div>`;
+    $$("#txList [data-deltx]").forEach((b) => b.onclick = () => {
+      const id = b.dataset.deltx;
+      const txn = D.finance.txns.find((x) => x.id === id);
+      if (txn) {
+        if (txn.acct && D.finance.bals[txn.acct]) D.finance.bals[txn.acct] += txn.type === "expense" ? +txn.amt : -txn.amt;
+        // 删记录时一并撤掉它挂着的非必要条目，避免留下对不上账的孤儿
+        const had = !!txn.frivId && unlinkFriv(txn.frivId);
+        D.finance.txns = D.finance.txns.filter((x) => x.id !== id);
+        save();
+        if (had) refreshFriv();
+        renderFinance(); renderOverview();
+        toast(had ? "已删除 · 非必要同步移除" : "已删除");
+      }
+    });
+    $$("#txList [data-edittx]").forEach((b) => b.onclick = () => editTxnModal(b.dataset.edittx));
   }
   function addTxn() {
     const date = $("#tDate").value, type = $("#tType").value, cat = $("#tCat").value, amt = +$("#tAmt").value, acct = $("#tAcct").value, note = $("#tNote").value.trim();
     if (!date || isNaN(amt) || amt <= 0) { toast("请填写完整", "warn"); return; }
-    D.finance.txns.push({ id: "t" + Date.now(), date, type, cat, amt, acct, note, ts: Date.now() });
+    const rec = { id: "t" + Date.now(), date, type, cat, amt, acct, note, ts: Date.now() };
+    D.finance.txns.push(rec);
     if (D.finance.bals[acct]) D.finance.bals[acct] += type === "expense" ? -amt : amt;
     // 勾了「非必要」→ 同步一条到非必要开支板块（仅支出；收入无所谓必要与否）
     const isFriv = !!(($("#tFriv") && $("#tFriv").checked) && type === "expense");
-    if (isFriv) pushFriv(date, note || cat, amt);
+    if (isFriv) rec.frivId = pushFriv(date, note || cat, amt);
     save(); $("#tAmt").value = ""; $("#tNote").value = "";
     if ($("#tFriv")) $("#tFriv").checked = false;
     fCurMonth = date.slice(0, 7); $("#fltMonth").value = fCurMonth; renderTxList(); renderAssets(); refreshFinCharts(); renderOverview();
     if (isFriv) refreshFriv();
     toast("已记账" + (isFriv ? " · 已同步非必要开支 💸" : ""));
+  }
+
+  /* ============ 修改已有记账记录 ============ */
+  function editTxnModal(id) {
+    const tx = D.finance.txns.find((x) => x.id === id);
+    if (!tx) { toast("这条记录已不存在", "warn"); return; }
+    const catsOf = (tp) => (tp === "income" ? D.finance.icats : D.finance.ecats);
+    const acctList = () => Object.keys(D.finance.bals).concat(["其他"]);
+    // 这条记录当前是否已挂了非必要条目（勾了就同步，取消勾选就解绑）
+    const linkedFriv = () => !!tx.frivId && frivItems().some((x) => x.id === tx.frivId);
+    let frivOn = linkedFriv();
+    const draw = (tp, cat) => {
+      const cs = catsOf(tp);
+      const curCat = cs.indexOf(cat) >= 0 ? cat : cs[0];
+      $("#modalBody").innerHTML = `
+        <div class="card-sub mb-2">修改记录 · 原 ${tx.date.slice(5)} ${tx.cat}</div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <button class="btn btn-sm ${tp === "expense" ? "btn-primary" : "btn-ghost"}" data-et="expense" style="flex:1;">📉 支出</button>
+          <button class="btn btn-sm ${tp === "income" ? "btn-primary" : "btn-ghost"}" data-et="income" style="flex:1;">📈 收入</button>
+        </div>
+        <div class="fld mb-2"><label>日期</label><input id="etDate" type="date" value="${tx.date}"></div>
+        <div class="fld mb-2"><label>分类</label>
+          <div style="display:flex;gap:6px;">
+            <select id="etCat" style="flex:1;min-width:0;">${cs.map((c) => `<option${c === curCat ? " selected" : ""}>${esc(c)}</option>`).join("")}</select>
+            <button class="btn btn-sm btn-primary" id="etAddCat" title="新增分类" style="flex:0 0 auto;width:36px;padding:0;font-size:18px;line-height:1;">+</button>
+          </div>
+        </div>
+        <div class="form form-2 mt-2">
+          <div class="fld"><label>金额</label><input id="etAmt" type="number" step="0.01" value="${tx.amt}"></div>
+          <div class="fld"><label>账户</label><select id="etAcct">${acctList().map((a) => `<option${a === tx.acct ? " selected" : ""}>${esc(a)}</option>`).join("")}</select></div>
+        </div>
+        <div class="fld mt-2"><label>备注</label><input id="etNote" value="${esc(tx.note || "")}" placeholder="可选"></div>
+        ${tp === "expense" ? `<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px;cursor:pointer;"><input type="checkbox" id="etFriv" style="width:18px;height:18px;accent-color:#be123c;"${frivOn ? " checked" : ""}>非必要支出 💸 · 同步记入非必要开支板块</label>` : ""}
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="btn btn-primary" id="etSave" style="flex:1;">保存修改</button>
+          <button class="btn btn-ghost" id="etCancel" style="flex:1;">取消</button>
+        </div>
+        <input type="hidden" id="etType" value="${tp}">
+      `;
+      $$("#modalBody [data-et]").forEach((b) => b.onclick = () => draw(b.dataset.et, curCat));
+      $("#etAddCat").onclick = () => addCatQuick(tp, (n) => { openModal("✎ 修改记录", ""); draw(tp, n); });
+      // 记住勾选态，这样切支出/收入类型重绘后不会莫名被清掉
+      const ef = $("#etFriv");
+      if (ef) ef.onchange = () => { frivOn = ef.checked; };
+      $("#etCancel").onclick = () => closeModal();
+      $("#etSave").onclick = () => {
+        const date = $("#etDate").value;
+        const newType = $("#etType").value;
+        const newCat = $("#etCat").value;
+        const amt = +$("#etAmt").value;
+        const acct = $("#etAcct").value;
+        const note = $("#etNote").value.trim();
+        if (!date || isNaN(amt) || amt <= 0) { toast("请填写完整", "warn"); return; }
+        /* 余额修正（关键）：先按旧值「撤销」，再按新值「计入」。
+           不做这两步的话，改金额 / 改支出↔收入 / 换账户 都会让账户余额对不上账。 */
+        if (tx.acct && D.finance.bals[tx.acct] !== undefined) {
+          D.finance.bals[tx.acct] += tx.type === "expense" ? +tx.amt : -tx.amt;
+        }
+        tx.date = date; tx.type = newType; tx.cat = newCat; tx.amt = amt; tx.acct = acct; tx.note = note;
+        if (acct && D.finance.bals[acct] !== undefined) {
+          D.finance.bals[acct] += newType === "expense" ? -amt : amt;
+        }
+        /* 非必要联动：改前记下状态，用于提示文案
+           ① 原本没勾、现在勾了 → 新增一条非必要
+           ② 原本勾了、现在还勾 → 同步新的日期/备注/金额
+           ③ 原本勾了、现在取消 → 删掉那条非必要（收入态一律视作不勾） */
+        const wasFriv = linkedFriv();
+        const wantFriv = newType === "expense" && !!($("#etFriv") && $("#etFriv").checked);
+        let frivChanged = false;
+        if (wantFriv && !wasFriv) { tx.frivId = pushFriv(date, note || newCat, amt); frivChanged = true; }
+        else if (wantFriv && wasFriv) { syncFriv(tx.frivId, date, note || newCat, amt); frivChanged = true; }
+        else if (!wantFriv && wasFriv) { unlinkFriv(tx.frivId); tx.frivId = null; frivChanged = true; }
+        save();
+        closeModal();
+        fCurMonth = date.slice(0, 7); $("#fltMonth").value = fCurMonth;
+        renderTxList(); renderAssets(); refreshFinCharts(); renderOverview();
+        if (frivChanged) refreshFriv();
+        toast("已保存修改" + (wantFriv ? " · 已同步非必要 💸" : (wasFriv ? " · 已移出非必要" : "")));
+      };
+    };
+    openModal("✎ 修改记录", ""); draw(tx.type, tx.cat);
   }
 
   /* ============ 一键直达：快速记账弹窗（绕过财务页） ============ */
@@ -2700,11 +2814,12 @@
         const date = $("#qtDate").value, t = $("#qtType").value, amt = +$("#qtAmt").value, acct = $("#qtAcct").value, note = $("#qtNote").value.trim();
         if (!date || isNaN(amt) || amt <= 0) { toast("请填金额", "warn"); return; }
         if (!curCat) { toast("请选分类", "warn"); return; }
-        D.finance.txns.push({ id: "t" + Date.now(), date, type: t, cat: curCat, amt, acct, note, ts: Date.now() });
+        const rec = { id: "t" + Date.now(), date, type: t, cat: curCat, amt, acct, note, ts: Date.now() };
+        D.finance.txns.push(rec);
         if (D.finance.bals[acct]) D.finance.bals[acct] += t === "expense" ? -amt : amt;
         // 勾了「非必要」→ 同步一条到非必要开支板块（仅支出；收入无此概念）
         const isFriv = !!(($("#qtFriv") && $("#qtFriv").checked) && t === "expense");
-        if (isFriv) pushFriv(date, note || curCat, amt);
+        if (isFriv) rec.frivId = pushFriv(date, note || curCat, amt);
         save();
         fCurMonth = date.slice(0, 7);
         renderOverview(); refreshFinCharts(); renderFinance();
