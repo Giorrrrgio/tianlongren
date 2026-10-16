@@ -2955,8 +2955,8 @@
   const PUNCH_STEPS = [
     { key: "amIn", label: "上午上班", emoji: "🌅", win: "08:15", leave: false },
     { key: "amOut", label: "上午下班", emoji: "🍱", win: "12:15", leave: true },
-    { key: "pmIn", label: "下午上班", emoji: "☀️", win: "14:00", leave: false },
-    { key: "pmOut", label: "下午下班", emoji: "🌆", win: "17:30", leave: true },
+    { key: "pmIn", label: "下午上班", emoji: "☀️", win: "13:30", leave: false },
+    { key: "pmOut", label: "下午下班", emoji: "🌆", win: "17:00", leave: true },
   ];
   function punchRec(ds) { D.punch = D.punch || {}; return D.punch[ds] || (D.punch[ds] = { times: {}, ot: 0 }); }
   function toMin(hm) { if (!hm || !/^\d{1,2}:\d{2}$/.test(hm)) return null; const [h, m] = hm.split(":").map(Number); return h * 60 + m; }
