@@ -2515,7 +2515,12 @@
         <div class="form form-3">
           <div class="fld"><label>日期</label><input type="date" id="tDate" value="${effectiveToday()}"></div>
           <div class="fld"><label>类型</label><select id="tType"><option value="expense">支出</option><option value="income">收入</option></select></div>
-          <div class="fld"><label>分类</label><select id="tCat"></select></div>
+          <div class="fld"><label>分类</label>
+            <div style="display:flex;gap:6px;">
+              <select id="tCat" style="flex:1;min-width:0;"></select>
+              <button class="btn btn-sm btn-primary" id="addCatBtn" title="新增分类" style="flex:0 0 auto;width:36px;padding:0;font-size:18px;line-height:1;">+</button>
+            </div>
+          </div>
           <div class="fld"><label>金额</label><input type="number" id="tAmt" step="0.01" placeholder="0.00"></div>
           <div class="fld"><label>账户</label><select id="tAcct"></select></div>
           <div class="fld"><label>备注</label><input id="tNote" placeholder="可选"></div>
@@ -2595,6 +2600,9 @@
     $("#fltMonth").onchange = () => { fCurMonth = $("#fltMonth").value; renderTxList(); };
     $("#addTx").onclick = addTxn;
     $("#catBtn").onclick = openCatModal;
+    // 分类下拉旁的「+」：按当前类型新增大类，加完自动选中它
+    const acb = $("#addCatBtn");
+    if (acb) acb.onclick = () => addCatQuick($("#tType").value, (n) => { popCat(); $("#tCat").value = n; closeModal(); });
     $("#addAc").onclick = addAcct;
     const acBtn = $("#addAcBtn"); if (acBtn) acBtn.onclick = () => { const row = $("#addAcRow"); if (row) { row.style.display = "flex"; try { $("#newAc").focus(); } catch (e) {} } };
     $("#addInv").onclick = addInv;
@@ -2647,9 +2655,11 @@
       return cats.slice().sort((a, b) => (freq[b] || 0) - (freq[a] || 0));
     };
     const accts = () => Object.keys(D.finance.bals);
-    const draw = (type) => {
+    const draw = (type, selCat) => {
       const cats = qChips(type);
       const selAcct = accts()[0] || "现金";
+      // 选中态按「分类名」而非下标，这样新增的分类也能被正确预选
+      let curCat = (selCat && cats.indexOf(selCat) >= 0) ? selCat : cats[0];
       // 日期置顶：补录/改日期最高频，放最前。
       // 切换支出/收入会整块重绘 modalBody，这里保留已选日期，
       // 否则一改类型日期就被重置回今天（日期在最前时这个体验问题会更明显）。
@@ -2664,7 +2674,8 @@
         <div class="fld mb-2"><label>日期</label><input id="qtDate" type="date" value="${keepDate}"></div>
         <div class="fld mb-2"><label>分类（按最近使用频率）</label>
           <div style="display:flex;flex-wrap:wrap;gap:6px;" id="qtChips">
-            ${cats.map((c, i) => `<button class="flow-btn ${i === 0 ? "qt-sel" : ""}" data-qc="${esc(c)}" style="padding:6px 12px;font-size:13px;">${esc(c)}</button>`).join("")}
+            ${cats.map((c) => `<button class="flow-btn ${c === curCat ? "qt-sel" : ""}" data-qc="${esc(c)}" style="padding:6px 12px;font-size:13px;">${esc(c)}</button>`).join("")}
+            <button class="flow-btn" id="qtAddCat" title="新增分类" style="padding:6px 10px;font-size:14px;">＋</button>
           </div>
         </div>
         <div class="form form-2 mt-2">
@@ -2680,9 +2691,11 @@
         <input type="hidden" id="qtType" value="${type}">
       `;
       $("#qtAcct").value = selAcct;
-      let curCat = cats[0];
       $$("#qtChips [data-qc]").forEach((b) => b.onclick = () => { $$("#qtChips [data-qc]").forEach((x) => x.classList.remove("qt-sel")); b.classList.add("qt-sel"); curCat = b.dataset.qc; });
       $$("#modalBody [data-qt]").forEach((b) => b.onclick = () => draw(b.dataset.qt));
+      // 分类区「+」：新增后回到快速记账，并自动选中刚加的分类
+      const qac = $("#qtAddCat");
+      if (qac) qac.onclick = () => addCatQuick(type, (n) => { openModal("💎 快速记账", ""); draw(type, n); });
       const saveOne = (keep) => {
         const date = $("#qtDate").value, t = $("#qtType").value, amt = +$("#qtAmt").value, acct = $("#qtAcct").value, note = $("#qtNote").value.trim();
         if (!date || isNaN(amt) || amt <= 0) { toast("请填金额", "warn"); return; }
@@ -2840,6 +2853,32 @@
       $("#catClose").onclick = () => { closeModal(); popCat(); };
     };
     openModal("管理分类", ""); draw();
+  }
+
+  /* 记账本 / 快速记账 分类区的「+」：不用先开管理弹窗，直接新增一个大类。
+     加到 ecats 还是 icats 取决于当前是支出还是收入。
+     ⚠️ 内部保存函数别叫 save——会遮蔽全局 save() 造成无限递归，故用 doSave。 */
+  function addCatQuick(type, onDone) {
+    const arr = type === "income" ? D.finance.icats : D.finance.ecats;
+    openModal("➕ 新增分类", `
+      <div class="card-sub mb-2">添加到「${type === "income" ? "收入" : "支出"}」大类</div>
+      <div class="fld"><label>分类名称</label><input id="ncName" placeholder="如：宠物 / 学习" maxlength="12"></div>
+      <button class="btn btn-primary w-full mt-2" id="ncSave">保存</button>
+    `);
+    const doSave = () => {
+      const n = ($("#ncName").value || "").trim();
+      if (!n) { toast("请输入分类名", "warn"); return; }
+      if (arr.includes(n)) { toast("「" + n + "」已存在", "warn"); return; }
+      arr.push(n); save();
+      toast("已添加分类 · " + n);
+      if (typeof onDone === "function") onDone(n); else closeModal();
+    };
+    $("#ncSave").onclick = doSave;
+    const inp = $("#ncName");
+    if (inp) {
+      inp.onkeydown = (e) => { if (e.key === "Enter") doSave(); };
+      try { inp.focus(); } catch (e) {}
+    }
   }
 
   function refreshFinCharts() {
