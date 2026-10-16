@@ -151,6 +151,19 @@
     renderFrivList(); renderFinance();
     toast("已记一笔乱花 💸");
   }
+  /* 供「记账本 / 快速记账」复用：勾了「非必要」就把这条同步写进非必要开支。
+     note 为空时回落到分类名，保证非必要列表里看得出这钱花在哪。 */
+  function pushFriv(date, note, amt) {
+    rolloverFriv();
+    frivItems().push({ id: "f" + Date.now(), date, note: note || "非必要支出", amt });
+  }
+  /* 只刷新「非必要开支」卡片的合计与列表，不重绘整个财务页——
+     否则记账后表单（日期/账户）会被重置，连续记账很难受。 */
+  function refreshFriv() {
+    const el = $("#frivTotal");
+    if (el) el.innerHTML = `<span class="num">${MM(frivTotal())}</span><span class="friv-sub">${frivItems().length} 笔 · ${cmk().replace("-", "年")}月</span>`;
+    renderFrivList();
+  }
   /* ============ 每日数据自动重置（凌晨 3 点生效） ============ */
   // 上次重置日期持久化到 localStorage（独立 key），这样页面刷新/重开也能正确判断跨天
   const ROLLOVER_KEY = "tlr_rollover_date";
@@ -2506,6 +2519,7 @@
           <div class="fld"><label>金额</label><input type="number" id="tAmt" step="0.01" placeholder="0.00"></div>
           <div class="fld"><label>账户</label><select id="tAcct"></select></div>
           <div class="fld"><label>备注</label><input id="tNote" placeholder="可选"></div>
+          <div class="fld" id="tFrivWrap"><label>非必要 💸</label><div style="display:flex;align-items:center;gap:6px;height:38px;"><input type="checkbox" id="tFriv" style="width:18px;height:18px;accent-color:#be123c;"><span style="font-size:13px;color:#64748b;">同步记入非必要开支</span></div></div>
         </div>
         <button class="btn btn-primary w-full mt-2" id="addTx">+ 添加记账</button>
         <div class="scroll-list" id="txList"></div>
@@ -2514,7 +2528,7 @@
       <!-- 乱花 -->
       <div class="card mt-3">
         <div class="card-head"><div class="card-title">本月非必要性开支 💸</div><div class="tag tag-rose">每月 1 日 0:00 清空</div></div>
-        <div class="friv-total"><span class="num">${MM(frivT)}</span><span class="friv-sub">${frivC} 笔 · ${frivM.replace("-", "年")}月</span></div>
+        <div class="friv-total" id="frivTotal"><span class="num">${MM(frivT)}</span><span class="friv-sub">${frivC} 笔 · ${frivM.replace("-", "年")}月</span></div>
         <div class="form form-3">
           <div class="fld"><label>日期</label><input type="date" id="frDate" value="${effectiveToday()}"></div>
           <div class="fld"><label>买了啥</label><input id="frNote" placeholder="奶茶 / 盲盒 / 随便花"></div>
@@ -2568,7 +2582,16 @@
 
     popCat(); popAcct(); renderTxList(); renderAssets(); loadSet(); refreshFinCharts();
 
-    $("#tType").onchange = popCat;
+    // 收入没有「非必要」概念：切到收入时隐藏勾选框并清空勾选
+    const syncFrivVis = () => {
+      const wrap = $("#tFrivWrap");
+      if (!wrap) return;
+      const isExpense = $("#tType").value === "expense";
+      wrap.style.display = isExpense ? "" : "none";
+      if (!isExpense && $("#tFriv")) $("#tFriv").checked = false;
+    };
+    syncFrivVis();
+    $("#tType").onchange = () => { popCat(); syncFrivVis(); };
     $("#fltMonth").onchange = () => { fCurMonth = $("#fltMonth").value; renderTxList(); };
     $("#addTx").onclick = addTxn;
     $("#catBtn").onclick = openCatModal;
@@ -2602,7 +2625,14 @@
     if (!date || isNaN(amt) || amt <= 0) { toast("请填写完整", "warn"); return; }
     D.finance.txns.push({ id: "t" + Date.now(), date, type, cat, amt, acct, note, ts: Date.now() });
     if (D.finance.bals[acct]) D.finance.bals[acct] += type === "expense" ? -amt : amt;
-    save(); $("#tAmt").value = ""; $("#tNote").value = ""; fCurMonth = date.slice(0, 7); $("#fltMonth").value = fCurMonth; renderTxList(); renderAssets(); refreshFinCharts(); renderOverview(); toast("已记账");
+    // 勾了「非必要」→ 同步一条到非必要开支板块（仅支出；收入无所谓必要与否）
+    const isFriv = !!(($("#tFriv") && $("#tFriv").checked) && type === "expense");
+    if (isFriv) pushFriv(date, note || cat, amt);
+    save(); $("#tAmt").value = ""; $("#tNote").value = "";
+    if ($("#tFriv")) $("#tFriv").checked = false;
+    fCurMonth = date.slice(0, 7); $("#fltMonth").value = fCurMonth; renderTxList(); renderAssets(); refreshFinCharts(); renderOverview();
+    if (isFriv) refreshFriv();
+    toast("已记账" + (isFriv ? " · 已同步非必要开支 💸" : ""));
   }
 
   /* ============ 一键直达：快速记账弹窗（绕过财务页） ============ */
@@ -2620,12 +2650,18 @@
     const draw = (type) => {
       const cats = qChips(type);
       const selAcct = accts()[0] || "现金";
+      // 日期置顶：补录/改日期最高频，放最前。
+      // 切换支出/收入会整块重绘 modalBody，这里保留已选日期，
+      // 否则一改类型日期就被重置回今天（日期在最前时这个体验问题会更明显）。
+      const prevDateEl = $("#qtDate");
+      const keepDate = (prevDateEl && prevDateEl.value) || effectiveToday();
       $("#modalBody").innerHTML = `
         <div class="card-sub mb-2">快速记一笔 · ${effectiveToday()}</div>
         <div style="display:flex;gap:8px;margin-bottom:12px;">
           <button class="btn btn-sm ${type === "expense" ? "btn-primary" : "btn-ghost"}" data-qt="expense" style="flex:1;">📉 支出</button>
           <button class="btn btn-sm ${type === "income" ? "btn-primary" : "btn-ghost"}" data-qt="income" style="flex:1;">📈 收入</button>
         </div>
+        <div class="fld mb-2"><label>日期</label><input id="qtDate" type="date" value="${keepDate}"></div>
         <div class="fld mb-2"><label>分类（按最近使用频率）</label>
           <div style="display:flex;flex-wrap:wrap;gap:6px;" id="qtChips">
             ${cats.map((c, i) => `<button class="flow-btn ${i === 0 ? "qt-sel" : ""}" data-qc="${esc(c)}" style="padding:6px 12px;font-size:13px;">${esc(c)}</button>`).join("")}
@@ -2635,10 +2671,8 @@
           <div class="fld"><label>金额（元）</label><input id="qtAmt" type="number" step="0.01" placeholder="0.00" style="font-size:18px;font-weight:800;" autofocus></div>
           <div class="fld"><label>账户</label><select id="qtAcct">${accts().map((a) => `<option>${esc(a)}</option>`).join("")}</select></div>
         </div>
-        <div class="form form-2 mt-2">
-          <div class="fld"><label>日期</label><input id="qtDate" type="date" value="${effectiveToday()}"></div>
-          <div class="fld"><label>备注</label><input id="qtNote" placeholder="可选"></div>
-        </div>
+        <div class="fld mt-2"><label>备注</label><input id="qtNote" placeholder="可选"></div>
+        ${type === "expense" ? `<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px;cursor:pointer;"><input type="checkbox" id="qtFriv" style="width:18px;height:18px;accent-color:#be123c;">非必要支出 💸 · 同步记入非必要开支板块</label>` : ""}
         <div style="display:flex;gap:8px;margin-top:12px;">
           <button class="btn btn-primary" id="qtSaveMore" style="flex:1;">保存并继续</button>
           <button class="btn btn-ghost" id="qtSave" style="flex:1;">保存</button>
@@ -2655,12 +2689,16 @@
         if (!curCat) { toast("请选分类", "warn"); return; }
         D.finance.txns.push({ id: "t" + Date.now(), date, type: t, cat: curCat, amt, acct, note, ts: Date.now() });
         if (D.finance.bals[acct]) D.finance.bals[acct] += t === "expense" ? -amt : amt;
+        // 勾了「非必要」→ 同步一条到非必要开支板块（仅支出；收入无此概念）
+        const isFriv = !!(($("#qtFriv") && $("#qtFriv").checked) && t === "expense");
+        if (isFriv) pushFriv(date, note || curCat, amt);
         save();
         fCurMonth = date.slice(0, 7);
         renderOverview(); refreshFinCharts(); renderFinance();
-        toast("已记账 · " + (t === "expense" ? "-" : "+") + MM(amt));
+        toast("已记账 · " + (t === "expense" ? "-" : "+") + MM(amt) + (isFriv ? " · 已同步非必要 💸" : ""));
         if (keep) {
           $("#qtAmt").value = ""; $("#qtNote").value = "";
+          if ($("#qtFriv")) $("#qtFriv").checked = false;
           try { $("#qtAmt").focus(); } catch (e) {}
         } else { closeModal(); }
       };
