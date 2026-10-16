@@ -361,6 +361,15 @@ body {
 }
 .mi-del:hover { transform: scale(1.12); }
 
+/* 记录行里的「编辑/删除」按钮组：两个小圆钮紧凑排列（.row 的 gap 是 12px，直接放会太散） */
+.row-acts { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+/* 编辑用主色、删除用红色，一眼分得清，避免手滑点错删除 */
+.mi-edit {
+  width: 22px; height: 22px; border-radius: 50%; border: none; background: var(--accent-soft); color: var(--accent-ink);
+  cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center; transition: transform .12s;
+}
+.mi-edit:hover { transform: scale(1.12); }
+
 /* 紧凑型添加按钮 */
 .meal-add-btn {
   display: inline-flex;
