@@ -1,9 +1,11 @@
 /* 天龙人 Service Worker
  * 缓存策略：Cache First（离线优先，后台静默更新）
- * 版本：tlr-v11
+ * 版本：tlr-v12
+ * v12：代码请求改用 cache:'no-store' 绕开浏览器 HTTP 缓存（Pages 的 max-age=600 会让
+ *      「网络优先」失效，导致部署后用户仍拿到旧代码）；注册时加 updateViaCache:'none'。
  */
 
-const CACHE_NAME = 'tlr-v11';
+const CACHE_NAME = 'tlr-v12';
 
 // 核心资源：小、必需。用 addAll 一次性预缓存。
 // v7 变更：体重识别已从「截图 OCR」改为「粘贴文本解析」，16MB 的 PP-OCRv4 模型
@@ -73,8 +75,15 @@ self.addEventListener('fetch', (event) => {
   const isCode = request.mode === 'navigate'
     || /\.(?:html|js|css)(?:\?|$)/i.test(url.pathname);
   if (isCode) {
+    /* ⚠️ v12 关键修复（根因）：GitHub Pages 对 HTML/JS/CSS 返回 Cache-Control: max-age=600。
+       SW 里的 fetch(request) 会被浏览器「HTTP 缓存」直接拦下，返回 10 分钟内的旧副本，
+       于是上面的「网络优先」名存实亡 —— 表现就是「明明部署了却没变化」。
+       解法：代码请求带 cache:'no-store'，强制绕开 HTTP 缓存走真实网络；
+       离线仍由 SW 自己的 Cache Storage 兜底，不受影响。 */
+    let netReq = request;
+    try { netReq = new Request(request, { cache: "no-store" }); } catch (e) {}
     event.respondWith(
-      fetch(request).then((resp) => {
+      fetch(netReq).then((resp) => {
         if (resp && resp.ok) {
           const clone = resp.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
