@@ -110,6 +110,21 @@
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+/* ========== 兼容别名（旧令牌名 → v5 新令牌） ==========
+   历史上用过 --text / --text-2 / --text-soft / --card / --surface-3，
+   v5 令牌重构时删掉了定义，但仍有 28 处规则在引用。
+   未定义的自定义属性不会报错，只会静默回退成「继承色」——
+   于是本该是「次要灰」的标签（打卡提示、动作名、账户名、乱花小字…）
+   全都跟着父元素变成正文黑，信息层级直接糊掉。这里一次性补齐。
+   这些别名本身指向 var(--ink) 等，暗色主题换 --ink 时它们自动跟随，无需重复定义。 */
+:root {
+  --text: var(--ink);
+  --text-2: var(--ink-3);
+  --text-soft: var(--ink-3);
+  --card: var(--surface);
+  --surface-3: var(--surface-2);
+}
 html, body { height: 100%; }
 body {
   font-family: var(--font-sans);
@@ -143,8 +158,37 @@ body {
 .nav-item:hover { background: rgba(255,255,255,.07); color: #fff; }
 .nav-item.active { background: rgba(255,255,255,.12); color: #fff; }
 .nav-item.active::before { content: ""; position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 3px; height: 20px; border-radius: 3px; background: var(--accent); }
-.nav-item .nico { font-size: 20px; width: 21px; text-align: center; flex: none; line-height: 1; }
+.nav-item .nico { width: 22px; height: 22px; text-align: center; flex: none; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.nav-item .nico svg { width: 22px; height: 22px; display: block; }
+/* 当前页图标加粗一档，配合左侧指示条，弱视力也能一眼定位 */
+.nav-item.active .nico svg { stroke-width: 2.2; }
 .side-foot { margin-top: auto; font-size: 11px; color: #5d6577; letter-spacing: .2px; }
+
+/* ========== 手机底部快捷栏（≤768px 才显示，上面还有抽屉菜单兜底） ========== */
+.tabbar {
+  display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 65;
+  align-items: stretch; justify-content: space-around; gap: 2px;
+  padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(180%); backdrop-filter: blur(22px) saturate(180%);
+  border-top: 1px solid var(--glass-border);
+  box-shadow: 0 -6px 24px rgba(16, 18, 29, .08);
+}
+.tab-item {
+  flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  min-height: 48px; padding: 5px 2px; border: none; border-radius: var(--r-md);
+  background: transparent; color: var(--ink-3); font-family: inherit; font-size: 10px; font-weight: 700;
+  cursor: pointer; transition: color .15s, background .15s; -webkit-tap-highlight-color: transparent;
+}
+.tab-item .nico { width: 23px; height: 23px; display: flex; align-items: center; justify-content: center; }
+.tab-item .nico svg { width: 23px; height: 23px; display: block; }
+.tab-item .tab-l { line-height: 1.2; letter-spacing: .2px; white-space: nowrap; }
+.tab-item:active { background: var(--glass-2); }
+.tab-item.active { color: var(--accent-ink); background: var(--accent-soft); }
+.tab-item.active .nico svg { stroke-width: 2.2; }
+@media (max-width: 768px) {
+  .tabbar { display: flex; }
+}
 
 /* ========== 主区域 ========== */
 .backdrop { position: fixed; inset: 0; background: rgba(8,9,12,.45); z-index: 70; display: none; }
@@ -182,18 +226,22 @@ body {
 }
 
 /* ========== 卡片 ========== */
-.card {
-  background: var(--surface); border-radius: var(--r-lg); padding: 22px;
-  box-shadow: var(--sh); border: 1px solid var(--border);
-  transition: transform .25s cubic-bezier(.16,1,.3,1), box-shadow .25s ease, border-color .25s ease;
+/* hover 抬升只对「真有鼠标」的设备生效：手机上 hover 不触发，
+   而 .card:hover 原地挂着 transform 会在点击时闪一下，观感很差 */
+@media (hover: hover) and (pointer: fine) {
+  .card:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 8px 20px rgba(16, 18, 29, .10),
+      0 2px 6px rgba(16, 18, 29, .05),
+      0 0 0 1px rgba(14, 159, 110, .14);
+    border-color: rgba(14, 159, 110, .18);
+  }
 }
-.card:hover {
-  transform: translateY(-4px);
-  box-shadow:
-    0 12px 28px rgba(16, 18, 29, .12),
-    0 4px 12px rgba(16, 18, 29, .06),
-    0 0 0 1px rgba(14, 159, 110, .08);
-  border-color: rgba(14, 159, 110, .15);
+.card {
+  background: var(--surface); border-radius: var(--r-lg); padding: 20px;
+  box-shadow: var(--sh-sm); border: 1px solid var(--border);
+  transition: transform .25s cubic-bezier(.16,1,.3,1), box-shadow .25s ease, border-color .25s ease;
 }
 .card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; gap: 10px; }
 .card-title { font-size: var(--fs-md); font-weight: 800; display: flex; align-items: center; gap: 8px; letter-spacing: -.2px; }
@@ -424,6 +472,14 @@ textarea { width: 100%; min-height: 80px; resize: vertical; font-family: inherit
 }
 .btn:hover { background: var(--line); }
 .btn:active { transform: scale(0.97); }
+/* 统一焦点环：全局的 outline 会硬切毛玻璃边缘，按钮/导航项改用柔和外发光 */
+.btn:focus-visible, .tab-item:focus-visible, .nav-item:focus-visible, .trend-tab:focus-visible, .drink:focus-visible, .flow-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent), 0 0 0 1.5px var(--accent);
+}
+.btn-primary:focus-visible, .btn-accent:focus-visible, .btn-rose:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 24%, transparent), 0 0 0 1.5px var(--accent);
+}
 .btn-primary { background: var(--brand); color: #fff; border-color: var(--brand); }
 .btn-primary:hover { background: var(--brand-2); }
 .btn-accent { background: var(--accent); color: #fff; border-color: var(--accent); }
@@ -546,7 +602,8 @@ textarea { width: 100%; min-height: 80px; resize: vertical; font-family: inherit
   .sidebar.open { transform: translateX(0); box-shadow: var(--sh-lg); }
   .main { margin-left: 0; }
   .menu-btn { display: flex; align-items: center; justify-content: center; }
-  .content { padding: 16px; }
+  /* 底部 110px：固定底部快捷栏（约 61px + 安全区）+ 滚动缓冲，别让最后一项被挡住 */
+  .content { padding: 16px 16px calc(96px + env(safe-area-inset-bottom)); }
   .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
   .macros { grid-template-columns: repeat(2, 1fr); }
   .hero-dark .hd-grid { grid-template-columns: repeat(2, 1fr); }
@@ -560,6 +617,14 @@ textarea { width: 100%; min-height: 80px; resize: vertical; font-family: inherit
   .ov-body-row .stat { flex: 0 0 calc(50% - 10px); }
   .form-2, .form-3 { grid-template-columns: 1fr; }
   .meal-grid { grid-template-columns: 1fr; } /* 手机端单列显示 */
+}
+
+/* ========== 手机端输入规范 ========== */
+/* iOS Safari 会对 font-size < 16px 的输入框在聚焦时自动放大页面，
+   这是「点一下输入框、整个界面弹一下」的元凶。手机上统一抬到 16px。 */
+@media (max-width: 768px) {
+  input, select, textarea { font-size: 16px; }
+  .act-w { width: 84px; } /* 字号变大后留给重量列更宽的位置 */
 }
 
 /* ========== 打卡模块 ========== */
@@ -632,6 +697,15 @@ body.fin-locked .chart-box::after { content:"🔒 财务已加密"; position:abs
 .ov-date { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 20px 24px; box-shadow: var(--sh); display:flex; align-items:center; justify-content:space-between; gap:16px; }
 .ov-date-left { display:flex; flex-direction:column; gap:2px; flex:1 1 auto; min-width:0; }
 .ov-date-d { font-size: 46px; font-weight: 800; line-height: 1; letter-spacing: -1px; font-family: var(--font-num); }
+/* 日号做「墨色→主色」渐变：每天打开第一眼看到的数字，值得一点强调。
+   用 @supports 包住，不支持 background-clip:text 的浏览器保持纯色。 */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .ov-date-d {
+    background-image: linear-gradient(145deg, var(--ink) 30%, var(--accent-ink) 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+  }
+}
 /* nowrap：时钟每秒变宽变窄时，日期绝不能在一行/两行之间跳 */
 .ov-date-m { font-size: 15px; color: var(--text-2); font-weight: 600; white-space: nowrap; }
 .ov-date-hi { font-size: 13px; color: var(--text-2); margin-top: 6px; }
@@ -674,14 +748,15 @@ body.fin-locked .chart-box::after { content:"🔒 财务已加密"; position:abs
 [data-theme="dark"] .ov-clock-time {
   color: #a5b4fc;
 }
-/* 秒数 — 与时分同款 */
+/* 秒数 — 与时分同款，但降一档字号、改用主色，读起来像表盘上的秒针 */
 .ov-clock-time .sec {
-  font-size: 36px;
+  font-size: 26px;
   font-weight: 800;
   font-family: var(--font-num);
   opacity: 1;
   vertical-align: baseline;
-  margin-left: 0;
+  margin-left: 2px;
+  color: var(--accent-ink);
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
   display: inline-block;
@@ -735,13 +810,15 @@ body::before {
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
 }
-.card:hover {
-  transform: translateY(-4px);
-  box-shadow:
-    0 16px 36px rgba(31, 38, 135, .16),
-    0 0 20px rgba(14, 159, 110, .06),
-    inset 0 1px 0 rgba(255, 255, 255, .55);
-  border-color: rgba(14, 159, 110, .2);
+@media (hover: hover) and (pointer: fine) {
+  .card:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 16px 34px rgba(31, 38, 135, .14),
+      0 0 0 1px rgba(14, 159, 110, .16),
+      inset 0 1px 0 rgba(255, 255, 255, .55);
+    border-color: rgba(14, 159, 110, .2);
+  }
 }
 
 /* ---- 深色 hero 也玻璃化 ---- */
