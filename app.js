@@ -1091,7 +1091,7 @@
       const q = b.dataset.q;
       if (q === "weight") quickWeightModal();
       else if (q === "calendar") navigate("calendar");
-      else if (q === "meal") { curMealDate = effectiveToday(); openModal("添加餐食", `<div class="meal-pick"><button class="flow-btn" data-mk="breakfast">🍳 早餐</button><button class="flow-btn" data-mk="lunch">🍱 午餐</button><button class="flow-btn" data-mk="dinner">🍲 晚餐</button><button class="flow-btn" data-mk="snack">🍎 加餐</button></div>`); $$("#modalBody [data-mk]").forEach((b) => b.onclick = () => { const k = b.dataset.mk; closeModal(); addMealModal(k); }); }
+      else if (q === "meal") { curMealDate = effectiveToday(); quickMealModal(); }
       else if (q === "punchIn") punchModal();
       else if (q === "finance") quickTxnModal();
       else if (q === "water") quickWaterModal();
@@ -1280,6 +1280,8 @@
 
     $("#body-nutrition").innerHTML = `
 
+      <button class="page-cta" id="mealCta"><span class="pc-emoji">🍣</span>记一餐<span class="pc-hint">早 / 午 / 晚 / 加餐 · 可补登</span></button>
+
       <div class="card" style="display:flex;align-items:center;gap:12px;justify-content:space-between;">
         <div style="display:flex;align-items:center;gap:10px;">
           <button class="cal-nav" id="mdPrev" aria-label="前一天">‹</button>
@@ -1326,6 +1328,7 @@
       </div>`;
 
     // 事件
+    const mealCta = $("#mealCta"); if (mealCta) mealCta.onclick = () => quickMealModal();
     $("#mdPrev").onclick = () => shiftMealDate(-1);
     $("#mdNext").onclick = () => shiftMealDate(1);
     $("#mdToday").onclick = () => { curMealDate = effectiveToday(); renderNutrition(); };
@@ -1913,6 +1916,11 @@
   if (typeof window !== "undefined") window.__parseNutritionText = parseNutritionText;
   if (typeof window !== "undefined") window.__TLR = { get D() { return D; }, normalize, unwrapSave };
 
+  // 一键记一餐：弹窗选餐次 → 进入添加餐食弹窗（addMealModal 记入 curMealDate，可补登历史日期）
+  function quickMealModal() {
+    openModal("🍣 记一餐", `<div class="meal-pick"><button class="flow-btn" data-mk="breakfast">🍳 早餐</button><button class="flow-btn" data-mk="lunch">🍱 午餐</button><button class="flow-btn" data-mk="dinner">🍲 晚餐</button><button class="flow-btn" data-mk="snack">🍎 加餐</button></div>`);
+    $$("#modalBody [data-mk]").forEach((b) => b.onclick = () => { const k = b.dataset.mk; closeModal(); addMealModal(k); });
+  }
   function addMealModal(mealKey) {
     const m = MEALS.find((x) => x.k === mealKey);
     const md = curMealDate || effectiveToday();
@@ -2152,6 +2160,8 @@
 
     $("#body-weight").innerHTML = `
 
+      <button class="page-cta" id="wCta"><span class="pc-emoji">🐖</span>称个重<span class="pc-hint">记体重 · 体脂 · 肌肉</span></button>
+
       <!-- 看板1：身体参数（最新） -->
       <div class="card">
         <div class="card-head"><div class="card-title">身体参数（最新）</div><span class="card-sub">${lw ? "更新于 " + lw.date.slice(5) : "还没有记录"}</span></div>
@@ -2205,6 +2215,7 @@
         </div>
       </div>`;
 
+    const wCta = $("#wCta"); if (wCta) wCta.onclick = () => quickWeightModal();
     $("#wSave").onclick = () => {
       const date = $("#wDate").value, w = parseFloat($("#wWeight").value), f = parseFloat($("#wFat").value), m = parseFloat($("#wMus").value), wm = parseFloat($("#wWater").value);
       if (!date || isNaN(w)) { toast("请填写日期和体重", "warn"); return; }
@@ -2314,6 +2325,7 @@
       : `<div class="card-sub">今天还没记录饮品</div>`;
     const drinkBtns = (D.nutrition.drinks || []).map((d) => `<button class="drink" data-drink="${d.id}">${drinkIcon(d.name)} ${esc(d.name)} +${d.water}ml</button>`).join("");
     $("#body-water").innerHTML = `
+      <button class="page-cta" id="waterCta"><span class="pc-emoji">🥃</span>喝口水<span class="pc-hint">选饮品即记录</span></button>
       <div class="card">
         <div class="card-head">
           <div class="card-title">今日饮水 / 饮品</div>
@@ -2333,6 +2345,7 @@
         ${drinkLog}
       </div>`;
 
+    const waterCta = $("#waterCta"); if (waterCta) waterCta.onclick = () => quickWaterModal();
     $$("#body-water [data-drink]").forEach((b) => b.onclick = () => {
       const d = D.nutrition.drinks.find((x) => x.id === b.dataset.drink); if (!d) return;
       const old = D.nutrition.water[t] || { water: 0, caffeine: 0, chlorogenic: 0, theophylline: 0, drinks: [] };
@@ -2534,15 +2547,24 @@
     $("#body-finance").innerHTML = `
       ${finLockBar()}
 
-      <!-- 资产总览：流动资金最大 → 存款（带储蓄率）→ 总资产/总负债/本月收入/本月支出 -->
+      <button class="page-cta" id="finCta"><span class="pc-emoji">💵</span>记一笔<span class="pc-hint">支出 · 收入 · 转账</span></button>
+
+      <!-- 资产总览：①流动资金最大 → ②存款独立色块 → 趋势/四格 → 净资产沉到页脚 -->
       <div class="hero-dark">
-        <div class="hd-label" style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;">
-          <span>净资产（总资产 − 总负债）</span>
-          <b style="font-family:var(--font-num);color:${nw >= 0 ? "#34d399" : "#fb7185"};">${MM(nw)}</b>
-        </div>
-        <div class="hd-label" style="margin-top:12px;">流动资金 · 可随时动用（不含储蓄存款与专款）</div>
+        <!-- ① 流动资金：第一眼 -->
+        <div class="hd-label">流动资金 · 可随时动用（不含储蓄存款与专款）</div>
         <div class="hd-main"><span style="color:#34d399">${MM(sp.liquid)}</span></div>
-        <div class="hd-sub">储蓄存款 <b class="num">${MM(sp.save)}</b> · 储蓄率 <b class="num">${Math.round(sr * 100)}%</b>${sp.earmark ? ` · 专款 <b class="num">${MM(sp.earmark)}</b>` : ""}</div>
+
+        <!-- ② 储蓄存款：第二眼 · 独立色块 -->
+        <div class="hd-save">
+          <div class="hd-label">储蓄存款 · 只进不出</div>
+          <div class="hd-save-row">
+            <div class="hd-second">${MM(sp.save)}</div>
+            <div class="hd-save-rate">储蓄率<b>${Math.round(sr * 100)}%</b></div>
+          </div>
+          ${sp.earmark ? `<div class="hd-save-earmark">另有专款 <span class="num">${MM(sp.earmark)}</span> · 不计入流动资金</div>` : ""}
+        </div>
+
         ${(() => {
           const cur = ms.bal;
           const prevMk = (() => { const d = new Date(fCurMonth + "-01"); d.setMonth(d.getMonth() - 1); return dstr(d).slice(0, 7); })();
@@ -2559,6 +2581,10 @@
           <div class="hd-item"><div class="hi-l">本月收入</div><div class="hi-v" style="color:#34d399">${MM(ms.inc)}</div></div>
           <div class="hd-item"><div class="hi-l">本月支出</div><div class="hi-v" style="color:#fb7185">${MM(ms.exp)}</div></div>
         </div>
+
+        <!-- 净资产：不再是第一眼，沉到页脚小字 -->
+        <div class="hd-foot"><span>净资产（总资产 − 总负债）</span><b class="num" style="color:${nw >= 0 ? "#34d399" : "#fb7185"};">${MM(nw)}</b></div>
+
         <details class="asset-edit">
           <summary>理财与负债（点击展开）</summary>
           <div class="card-sub mb-1">理财项目</div>
@@ -2740,6 +2766,7 @@
     $("#sfMonth").onchange = () => { $("#sfAmt").value = D.finance.sfund[$("#sfMonth").value] || ""; };
     $("#yrSel").onchange = () => { $("#yrBadge").textContent = $("#yrSel").value + "年"; refreshFinCharts(); };
     const ft = $("#finToggle"); if (ft) ft.onclick = finToggle;
+    const finCta = $("#finCta"); if (finCta) finCta.onclick = () => quickTxnModal();
     const af = $("#addFriv"); if (af) af.onclick = addFriv;
     renderFrivList();
     renderFundLists();
@@ -3414,6 +3441,7 @@
       return `<div class="row"><div class="row-main"><div class="row-title">${k.slice(5)}</div><div class="row-meta">${parts}</div></div><span class="tag ${we ? "tag-amber" : "tag-gray"}">${we ? "周末" : "工作日"}</span></div>`;
     }).join("") : emptyState('📋', '还没有打卡记录', '开始记录你的每日打卡吧', null, null);
     $("#body-punch").innerHTML = `
+      <button class="page-cta" id="punchCta"><span class="pc-emoji">🕐</span>打个卡<span class="pc-hint">选时段 · 记当前时刻</span></button>
       <div class="card">
         <div class="card-head"><div class="card-title">上下班打卡</div><span class="card-sub">${t} 周${WK[wd]}${weekend ? " · 周末" : ""}</span></div>
         <div class="punch-banner ${weekend ? "we" : ""}">${banner}</div>
@@ -3425,6 +3453,7 @@
         <div class="punch-hist">${hist}</div>
       </div>`;
     // 事件委托：打卡操作（时间修改/现在打卡/删除/清空）
+    const punchCta = $("#punchCta"); if (punchCta) punchCta.onclick = () => punchModal();
     $("#body-punch").onchange = (e) => {
       const d = e.target;
       if (d.classList.contains("punch-time")) { punchRec(t).times[d.dataset.pk] = d.value; save(); renderPunch(); }
