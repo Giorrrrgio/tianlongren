@@ -20,6 +20,13 @@
   const fm = (v) => { const a = Math.abs(v); return a >= 10000 ? (v / 10000).toFixed(2) + "万" : fmt2(v); };
 
   /* ============ CountUp 数字滚动动画 ============ */
+  /* 尊重系统「减少动态效果」偏好：styles.css 里的 stagger / pulse / card hover 都already
+     在 prefers-reduced-motion 下关掉了，JS 侧却还在跑 800ms 滚动，两边不一致。
+     开启该偏好时直接落终值，不做中间帧。 */
+  const REDUCE_MOTION = (() => {
+    try { return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches); }
+    catch (e) { return false; }
+  })();
   function countUp(el, target, options = {}) {
     if (!el) return;
     const {
@@ -33,9 +40,8 @@
     const start = performance.now();
     const startVal = 0;
     const endVal = parseFloat(target) || 0;
-
-    // 如果浏览器不可见，直接显示目标值
-    if (document.hidden) { el.textContent = prefix + formatter(endVal) + suffix; return; }
+    // 减少动态效果 / 页面在后台：直接显示终值，省掉动画
+    if (REDUCE_MOTION || document.hidden) { el.textContent = prefix + formatter(endVal) + suffix; return; }
 
     function update(now) {
       const elapsed = now - start;
