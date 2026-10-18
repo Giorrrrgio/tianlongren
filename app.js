@@ -436,6 +436,7 @@
     if (!m.finance.sfund) m.finance.sfund = {};
     if (!m.finance.hfund) m.finance.hfund = {};
     if (!m.finance.msets) m.finance.msets = {};
+    if (!m.finance.acctClass) m.finance.acctClass = {}; // 账户分类显式配置（不配则按名字默认规则）
     if (!m.finance.txns) m.finance.txns = [];
     if (!m.frivolous) m.frivolous = { month: cmk(), items: [] };
     if (!m.nutrition) m.nutrition = {};
@@ -570,7 +571,51 @@
 
   /* ============ 财务聚合 ============ */
   function cmk(d) { const x = d || new Date(); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}`; }
+  /* 记账 id：同毫秒连点两笔也不能重号。
+     老代码 "t"+Date.now() 会撞号——撞号后删一条记录，filter 会把同 id 的全删掉。 */
+  function newTxnId() { return "t" + Date.now() + Math.random().toString(36).slice(2, 6); }
   function aTot() { return Object.values(D.finance.bals).reduce((s, v) => s + (+v || 0), 0); }
+  /* ============ 账户分类：建行=储蓄存款 / 课费=专款 / 其它=流动资金 ============ */
+  /* 显式配置优先：D.finance.acctClass[账户名] = "save" | "earmark" | "liquid"（账户编辑里可改）；
+     没配就按名字默认：含「建行」视为储蓄存款（不动），含「课费」视为专款，其余都是流动资金。 */
+  function acctClass(name) {
+    const cfg = D.finance.acctClass || {};
+    if (cfg[name]) return cfg[name];
+    if (name.indexOf("建行") >= 0) return "save";
+    if (name.indexOf("课费") >= 0) return "earmark";
+    return "liquid";
+  }
+  const ACCT_CLASS_LABEL = { liquid: "流动资金", save: "储蓄存款", earmark: "专款" };
+  /* 三类余额拆分：流动资金（可花）/ 储蓄存款（不动）/ 专款（如筱霓课费，不算流动资金） */
+  function acctSplit() {
+    let liquid = 0, save = 0, earmark = 0;
+    Object.entries(D.finance.bals).forEach(([n, v]) => {
+      const c = acctClass(n), x = +v || 0;
+      if (c === "save") save += x; else if (c === "earmark") earmark += x; else liquid += x;
+    });
+    return { liquid, save, earmark };
+  }
+  /* 总资产（与 hero 网格口径一致：账户 + 月度灵活资金 + 理财 + 公积金 + 社保） */
+  function assetTotal() { return aTot() + flexOf(cmk()) + iTot() + hTot() + sTot(); }
+  /* 储蓄率 = 储蓄存款 ÷ 总资产（随账户分类变化） */
+  function saveRate() { const t = assetTotal(); return t > 0 ? acctSplit().save / t : 0; }
+  /* 转账性质：转入储蓄账户=储蓄 / 从储蓄账户转出=应急 / 其它账户之间=流转 */
+  function transferKind(t) {
+    const fc = t.from ? acctClass(t.from) : "", tc = t.to ? acctClass(t.to) : "";
+    if (tc === "save") return "储蓄";
+    if (fc === "save") return "应急";
+    return "流转";
+  }
+  /* 记账对余额的作用：支出 -amt / 收入 +amt / 转账 from-amt、to+amt（收支汇总不受影响） */
+  function applyTxnBal(rec, sign) {
+    const amt = (+rec.amt || 0) * sign;
+    if (rec.type === "transfer") {
+      if (rec.from && D.finance.bals[rec.from] !== undefined) D.finance.bals[rec.from] -= amt;
+      if (rec.to && D.finance.bals[rec.to] !== undefined) D.finance.bals[rec.to] += amt;
+    } else if (rec.acct && D.finance.bals[rec.acct] !== undefined) {
+      D.finance.bals[rec.acct] += rec.type === "expense" ? -amt : amt;
+    }
+  }
   function iTot() { return D.finance.invs.reduce((s, i) => s + (+i.cv || 0), 0); }
   function dTot() { return D.finance.debts.reduce((s, d) => s + (+d.amt || 0), 0); }
   function hTot() { return Object.values(D.finance.hfund).reduce((s, v) => s + (+v || 0), 0); }
@@ -599,9 +644,18 @@
   function allMonths() { const s = new Set(Object.keys(D.finance.msets)); D.finance.txns.forEach((t) => { if (t.date && t.date.length >= 7) s.add(t.date.slice(0, 7)); }); s.add(cmk()); return Array.from(s).sort(); }
   function monthSummary(mk) {
     const st = gms(mk); const tx = txnsOf(mk); let ti = 0, te = 0; const ec = {}, ic = {};
-    tx.forEach((t) => { const a = +t.amt || 0; if (t.type === "income") { ti += a; ic[t.cat] = (ic[t.cat] || 0) + a; } else { te += a; ec[t.cat] = (ec[t.cat] || 0) + a; } });
+    let saveIn = 0, saveOut = 0; // 当月转入 / 转出储蓄账户（转账，不计入收支）
+    tx.forEach((t) => {
+      const a = +t.amt || 0;
+      if (t.type === "income") { ti += a; ic[t.cat] = (ic[t.cat] || 0) + a; }
+      else if (t.type === "transfer") {
+        if (t.to && acctClass(t.to) === "save") saveIn += a;
+        if (t.from && acctClass(t.from) === "save") saveOut += a;
+      }
+      else { te += a; ec[t.cat] = (ec[t.cat] || 0) + a; }
+    });
     const sal = +st.salary || 0; if (sal > 0) ic["月薪"] = (ic["月薪"] || 0) + sal;
-    return { sal, inc: sal + ti, exp: te, bal: sal + ti - te, ec, ic };
+    return { sal, inc: sal + ti, exp: te, bal: sal + ti - te, saveIn, saveOut, saveNet: saveIn - saveOut, ec, ic };
   }
 
   /* ============ Toast ============ */
@@ -749,16 +803,37 @@
   function drawBar(cv, labels, datasets, opt = {}) {
     const { ctx, w, h } = setupCanvas(cv, opt.h || 270);
     const pad = { l: 48, r: 14, t: 18, b: 28 }; const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
-    const all = datasets.flatMap((d) => d.data); const max = Math.max(...all, 1) * 1.1;
+    /* 支持负值（结余/存钱可能为负）：以 0 为基线，量程取 [min, max]。
+       老代码 max 只取正值，负柱会以负高度 fillRect，画成「倒长的正柱」，是错的。 */
+    const all = datasets.flatMap((d) => d.data);
+    let max = Math.max(...all, 0), min = Math.min(...all, 0);
+    if (max === min) { max = 1; min = 0; }
+    const span = max - min;
+    const yOf = (v) => pad.t + (ch * (max - v)) / span;
     const ct = chartTheme();
+    const fmtTick = (v) => (Math.abs(v) >= 10000 ? (v / 10000).toFixed(1) + "万" : String(Math.round(v)));
     ctx.font = "11px sans-serif"; ctx.textAlign = "right";
-    for (let g = 0; g <= 3; g++) { const v = (max / 3) * (3 - g); const yy = pad.t + (ch * g) / 3; ctx.strokeStyle = ct.grid; ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(w - pad.r, yy); ctx.stroke(); ctx.fillStyle = ct.text; ctx.fillText(v >= 10000 ? (v / 10000).toFixed(1) + "万" : Math.round(v), pad.l - 6, yy + 4); }
-    const n = labels.length, gp = cw / n, bw = Math.min(22, gp * 0.45);
+    for (let g = 0; g <= 3; g++) {
+      const v = max - (span * g) / 3;
+      const yy = pad.t + (ch * g) / 3;
+      ctx.strokeStyle = Math.abs(v) < 1e-9 ? ct.text : ct.grid; // 零线加重
+      ctx.lineWidth = Math.abs(v) < 1e-9 ? 1.2 : 1;
+      ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(w - pad.r, yy); ctx.stroke();
+      ctx.fillStyle = ct.text; ctx.fillText(fmtTick(v), pad.l - 6, yy + 4);
+    }
+    ctx.lineWidth = 1;
+    const n = labels.length, gp = cw / n;
+    // 柱宽按组内柱数自适应，保证再多系列也不跨组重叠
+    const bw = Math.max(2, Math.min(18, (gp * 0.92 - (datasets.length - 1) * 2) / datasets.length));
     labels.forEach((lb, i) => {
       const x = pad.l + gp * i + gp / 2;
+      const groupW = datasets.length * bw + (datasets.length - 1) * 2;
       datasets.forEach((ds, di) => {
-        const v = ds.data[i] || 0; const bh = (v / max) * ch; const bx = x - bw / 2 + (di - (datasets.length - 1) / 2) * (bw + 3);
-        ctx.fillStyle = ds.color; ctx.fillRect(bx, pad.t + ch - bh, bw, bh);
+        const v = ds.data[i] || 0;
+        const yTop = yOf(Math.max(v, 0)), yBot = yOf(Math.min(v, 0));
+        if (yBot - yTop < 0.5) return; // 0 值不画
+        ctx.fillStyle = ds.color;
+        ctx.fillRect(x - groupW / 2 + di * (bw + 2), yTop, bw, yBot - yTop);
       });
       ctx.fillStyle = ct.text; ctx.textAlign = "center"; ctx.fillText(lb, x, h - 10);
     });
@@ -910,7 +985,7 @@
       weight: wToday,
       calendar: !!(D.fitness.calendar && D.fitness.calendar[t]),
       meal: ["breakfast", "lunch", "dinner", "snack"].some((k) => ((D.nutrition.daily[t] || {})[k] || []).length > 0),
-      finance: (D.finance.txns || []).some((x) => x.date === t),
+      finance: (D.finance.txns || []).some((x) => x.date === t && x.type !== "transfer"),
       punchIn: !!(D.punch && D.punch[t] && Object.keys(D.punch[t].times || {}).length > 0),
       water: water > 0,
     };
@@ -2448,8 +2523,10 @@
 
   /* ============ 渲染：财务 ============ */
   let fCurMonth = cmk();
+  let lastTxnDate = ""; // 记账后整页重渲染会重建表单，用它把补录日期还回去
   function renderFinance() {
     const F = D.finance; const nw = netWorth(); const ms = monthSummary(fCurMonth);
+    const sp = acctSplit(); const sr = saveRate();
     const invProfit = D.finance.invs.reduce((s, i) => s + ((+i.cv || 0) - (+i.cap || 0)), 0);
     rolloverFriv();
     const frivT = frivTotal(); const frivC = frivItems().length; const frivM = cmk();
@@ -2457,10 +2534,15 @@
     $("#body-finance").innerHTML = `
       ${finLockBar()}
 
-      <!-- 单一 hero：净资产 + 4 个核心指标 + 同比 -->
+      <!-- 资产总览：流动资金最大 → 存款（带储蓄率）→ 总资产/总负债/本月收入/本月支出 -->
       <div class="hero-dark">
-        <div class="hd-label">净资产（总资产 − 总负债）</div>
-        <div class="hd-main"><span style="color:${nw >= 0 ? "#34d399" : "#fb7185"}">${MM(nw)}</span></div>
+        <div class="hd-label" style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;">
+          <span>净资产（总资产 − 总负债）</span>
+          <b style="font-family:var(--font-num);color:${nw >= 0 ? "#34d399" : "#fb7185"};">${MM(nw)}</b>
+        </div>
+        <div class="hd-label" style="margin-top:12px;">流动资金 · 可随时动用（不含储蓄存款与专款）</div>
+        <div class="hd-main"><span style="color:#34d399">${MM(sp.liquid)}</span></div>
+        <div class="hd-sub">储蓄存款 <b class="num">${MM(sp.save)}</b> · 储蓄率 <b class="num">${Math.round(sr * 100)}%</b>${sp.earmark ? ` · 专款 <b class="num">${MM(sp.earmark)}</b>` : ""}</div>
         ${(() => {
           const cur = ms.bal;
           const prevMk = (() => { const d = new Date(fCurMonth + "-01"); d.setMonth(d.getMonth() - 1); return dstr(d).slice(0, 7); })();
@@ -2472,7 +2554,7 @@
           return `<div class="hd-trend ${up ? "up" : "down"}">${up ? "↑" : "↓"} ${pct.replace("-", "")}% vs 上月 ${MM2(prev)}</div>`;
         })()}
         <div class="hd-grid hd-grid-4">
-          <div class="hd-item"><div class="hi-l">总资产</div><div class="hi-v">${MM(aTot() + flexOf(cmk()) + iTot() + hTot() + sTot())}</div></div>
+          <div class="hd-item"><div class="hi-l">总资产</div><div class="hi-v">${MM(assetTotal())}</div></div>
           <div class="hd-item"><div class="hi-l">总负债</div><div class="hi-v" style="color:#fb7185">${MM(dTot())}</div></div>
           <div class="hd-item"><div class="hi-l">本月收入</div><div class="hi-v" style="color:#34d399">${MM(ms.inc)}</div></div>
           <div class="hd-item"><div class="hi-l">本月支出</div><div class="hi-v" style="color:#fb7185">${MM(ms.exp)}</div></div>
@@ -2523,7 +2605,7 @@
           </div>
           <div class="fs-item">
             <div class="fs-l">储蓄率</div>
-            <div class="fs-v">${ms.inc > 0 ? Math.round(ms.bal / ms.inc * 100) : 0}%</div>
+            <div class="fs-v" title="储蓄存款 ÷ 总资产">${Math.round(sr * 100)}%</div>
           </div>
           <div class="fs-item">
             <div class="fs-l">日均预算（剩 ${(() => { const d = new Date(); const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); return Math.max(0, last - d.getDate() + 1); })()} 天）</div>
@@ -2547,16 +2629,18 @@
           </div>
         </div>
         <div class="form form-3">
-          <div class="fld"><label>日期</label><input type="date" id="tDate" value="${effectiveToday()}"></div>
-          <div class="fld"><label>类型</label><select id="tType"><option value="expense">支出</option><option value="income">收入</option></select></div>
-          <div class="fld"><label>分类</label>
+          <div class="fld"><label>日期</label><input type="date" id="tDate" value="${lastTxnDate || effectiveToday()}"></div>
+          <div class="fld"><label>类型</label><select id="tType"><option value="expense">支出</option><option value="income">收入</option><option value="transfer">转账</option></select></div>
+          <div class="fld" id="tCatWrap"><label>分类</label>
             <div style="display:flex;gap:6px;">
               <select id="tCat" style="flex:1;min-width:0;"></select>
               <button class="btn btn-sm btn-primary" id="addCatBtn" title="新增分类" style="flex:0 0 auto;width:36px;padding:0;font-size:18px;line-height:1;">+</button>
             </div>
           </div>
           <div class="fld"><label>金额</label><input type="number" id="tAmt" step="0.01" placeholder="0.00"></div>
-          <div class="fld"><label>账户</label><select id="tAcct"></select></div>
+          <div class="fld" id="tAcctWrap"><label>账户</label><select id="tAcct"></select></div>
+          <div class="fld" id="tFromWrap" style="display:none;"><label>从（转出）</label><select id="tFrom"></select></div>
+          <div class="fld" id="tToWrap" style="display:none;"><label>到（转入）</label><select id="tTo"></select></div>
           <div class="fld"><label>备注</label><input id="tNote" placeholder="可选"></div>
           <div class="fld" id="tFrivWrap"><label>非必要 💸</label><div style="display:flex;align-items:center;gap:6px;height:38px;"><input type="checkbox" id="tFriv" style="width:18px;height:18px;accent-color:#be123c;"><span style="font-size:13px;color:#64748b;">同步记入非必要开支</span></div></div>
         </div>
@@ -2606,7 +2690,7 @@
       </div>
 
       <!-- 趋势图：近 12 月收支结余堆叠柱 -->
-      <div class="card mt-3"><div class="card-head"><div class="card-title">月度汇总（近 12 月）</div><span class="card-sub">绿=收入 红=支出 蓝=结余</span></div><div class="chart-box"><canvas id="chTrend" class="chart" style="height:270px;"></canvas></div></div>
+      <div class="card mt-3"><div class="card-head"><div class="card-title">月度汇总（近 12 月）</div><span class="card-sub">绿=收入 红=支出 蓝=结余 紫=存钱</span></div><div class="chart-box"><canvas id="chTrend" class="chart" style="height:270px;"></canvas></div></div>
       <div class="card mt-3"><div class="card-head"><div class="card-title">年度汇总 <span id="yrBadge" class="tag tag-violet"></span></div><div class="fld" style="width:auto;"><select id="yrSel"></select></div></div><div class="chart-box"><canvas id="chYear" class="chart" style="height:260px;"></canvas></div></div>`;
 
     const months = allMonths().reverse();
@@ -2629,8 +2713,15 @@
       wrap.style.display = isExpense ? "" : "none";
       if (!isExpense && $("#tFriv")) $("#tFriv").checked = false;
     };
-    syncFrivVis();
-    $("#tType").onchange = () => { popCat(); syncFrivVis(); };
+    // 转账不记收支：隐藏「分类/账户」，改显「从/到」；收入/支出照旧
+    const syncTypeVis = () => {
+      const isT = $("#tType").value === "transfer";
+      const set = (id, show) => { const el = $(id); if (el) el.style.display = show ? "" : "none"; };
+      set("#tCatWrap", !isT); set("#tAcctWrap", !isT); set("#tFromWrap", isT); set("#tToWrap", isT);
+      syncFrivVis();
+    };
+    syncTypeVis();
+    $("#tType").onchange = () => { popCat(); syncTypeVis(); };
     $("#fltMonth").onchange = () => { fCurMonth = $("#fltMonth").value; renderTxList(); };
     $("#addTx").onclick = addTxn;
     $("#catBtn").onclick = openCatModal;
@@ -2656,15 +2747,31 @@
   }
 
   function popCat() { const arr = $("#tType").value === "income" ? D.finance.icats : D.finance.ecats; $("#tCat").innerHTML = arr.map((c) => `<option>${c}</option>`).join(""); }
-  function popAcct() { $("#tAcct").innerHTML = Object.keys(D.finance.bals).concat(["其他"]).map((a) => `<option>${a}</option>`).join(""); }
+  function popAcct() {
+    const html = Object.keys(D.finance.bals).concat(["其他"]).map((a) => `<option>${esc(a)}</option>`).join("");
+    if ($("#tAcct")) $("#tAcct").innerHTML = html;
+    if ($("#tFrom")) $("#tFrom").innerHTML = html;
+    if ($("#tTo")) $("#tTo").innerHTML = html;
+  }
   function renderTxList() {
     const tx = txnsOf(fCurMonth).slice().sort((a, b) => b.date.localeCompare(a.date) || (b.ts || 0) - (a.ts || 0));
-    $("#txList").innerHTML = tx.length ? tx.map((t) => `<div class="row"><div class="row-ic" style="background:${t.type === "income" ? "#d1fae5" : "#ffe4e6"};color:${t.type === "income" ? "#047857" : "#be123c"};">${t.type === "income" ? "收" : "支"}</div><div class="row-main"><div class="row-title">${catIcon(t.cat)} ${esc(t.cat)} · ${esc(t.note || "—")}</div><div class="row-meta">${t.date.slice(5)} · ${esc(t.acct || "其他")}</div></div><span class="num" style="color:${t.type === "income" ? "#047857" : "#be123c"};font-weight:800;">${t.type === "income" ? "+" : "-"}${MM2(t.amt)}</span><div class="row-acts"><button class="mi-edit" data-edittx="${t.id}" title="编辑这条记录">✎</button><button class="mi-del" data-deltx="${t.id}" title="删除这条记录">×</button></div></div>`).join("") : `<div class="empty">本月暂无记录</div>`;
+    $("#txList").innerHTML = tx.length ? tx.map((t) => {
+      const isT = t.type === "transfer";
+      const ic = isT ? ["#dbeafe", "#1d4ed8", "转"] : (t.type === "income" ? ["#d1fae5", "#047857", "收"] : ["#ffe4e6", "#be123c", "支"]);
+      const title = isT
+        ? `🔁 ${esc(t.from)} → ${esc(t.to)} <span class="tag tag-blue">${transferKind(t)}</span>`
+        : `${catIcon(t.cat)} ${esc(t.cat)} · ${esc(t.note || "—")}`;
+      const amtHtml = isT
+        ? `<span class="num" style="color:#1d4ed8;font-weight:800;">⇄ ${MM2(t.amt)}</span>`
+        : `<span class="num" style="color:${t.type === "income" ? "#047857" : "#be123c"};font-weight:800;">${t.type === "income" ? "+" : "-"}${MM2(t.amt)}</span>`;
+      return `<div class="row"><div class="row-ic" style="background:${ic[0]};color:${ic[1]};">${ic[2]}</div><div class="row-main"><div class="row-title">${title}</div><div class="row-meta">${t.date.slice(5)} · ${isT ? esc(t.note || "账户间流转") : esc(t.acct || "其他")}</div></div>${amtHtml}<div class="row-acts"><button class="mi-edit" data-edittx="${t.id}" title="编辑这条记录">✎</button><button class="mi-del" data-deltx="${t.id}" title="删除这条记录">×</button></div></div>`;
+    }).join("") : `<div class="empty">本月暂无记录</div>`;
     $$("#txList [data-deltx]").forEach((b) => b.onclick = () => {
       const id = b.dataset.deltx;
       const txn = D.finance.txns.find((x) => x.id === id);
       if (txn) {
-        if (txn.acct && D.finance.bals[txn.acct]) D.finance.bals[txn.acct] += txn.type === "expense" ? +txn.amt : -txn.amt;
+        // 删记录时按类型反向修正余额（转账：from 加回、to 扣回）
+        applyTxnBal(txn, -1);
         // 删记录时一并撤掉它挂着的非必要条目，避免留下对不上账的孤儿
         const had = !!txn.frivId && unlinkFriv(txn.frivId);
         D.finance.txns = D.finance.txns.filter((x) => x.id !== id);
@@ -2677,19 +2784,30 @@
     $$("#txList [data-edittx]").forEach((b) => b.onclick = () => editTxnModal(b.dataset.edittx));
   }
   function addTxn() {
-    const date = $("#tDate").value, type = $("#tType").value, cat = $("#tCat").value, amt = +$("#tAmt").value, acct = $("#tAcct").value, note = $("#tNote").value.trim();
+    const date = $("#tDate").value, type = $("#tType").value, amt = +$("#tAmt").value, note = $("#tNote").value.trim();
     if (!date || isNaN(amt) || amt <= 0) { toast("请填写完整", "warn"); return; }
-    const rec = { id: "t" + Date.now(), date, type, cat, amt, acct, note, ts: Date.now() };
+    let rec;
+    if (type === "transfer") {
+      const from = $("#tFrom").value, to = $("#tTo").value;
+      if (!from || !to) { toast("请选择转出/转入账户", "warn"); return; }
+      if (from === to) { toast("转出和转入不能是同一个账户", "warn"); return; }
+      rec = { id: newTxnId(), date, type: "transfer", amt, from, to, note, ts: Date.now() };
+    } else {
+      rec = { id: newTxnId(), date, type, cat: $("#tCat").value, amt, acct: $("#tAcct").value, note, ts: Date.now() };
+    }
     D.finance.txns.push(rec);
-    if (D.finance.bals[acct]) D.finance.bals[acct] += type === "expense" ? -amt : amt;
-    // 勾了「非必要」→ 同步一条到非必要开支板块（仅支出；收入无所谓必要与否）
+    applyTxnBal(rec, 1);
+    // 勾了「非必要」→ 同步一条到非必要开支板块（仅支出；收入/转账无所谓必要与否）
     const isFriv = !!(($("#tFriv") && $("#tFriv").checked) && type === "expense");
-    if (isFriv) rec.frivId = pushFriv(date, note || cat, amt);
-    save(); $("#tAmt").value = ""; $("#tNote").value = "";
+    if (isFriv) rec.frivId = pushFriv(date, note || rec.cat, amt);
+    save(); lastTxnDate = date; $("#tAmt").value = ""; $("#tNote").value = "";
     if ($("#tFriv")) $("#tFriv").checked = false;
-    fCurMonth = date.slice(0, 7); $("#fltMonth").value = fCurMonth; renderTxList(); renderAssets(); refreshFinCharts(); renderOverview();
+    fCurMonth = date.slice(0, 7);
+    /* 必须整页重渲染：hero 的流动资金/存款/储蓄率、磁贴都跟着这笔变，
+       老代码只刷列表不刷 hero，记完账顶部数字是旧的。 */
+    renderFinance(); renderOverview();
     if (isFriv) refreshFriv();
-    toast("已记账" + (isFriv ? " · 已同步非必要开支 💸" : ""));
+    toast(type === "transfer" ? `已转账 · ${rec.from} → ${rec.to} ${MM(amt)}` : "已记账" + (isFriv ? " · 已同步非必要开支 💸" : ""));
   }
 
   /* ============ 修改已有记账记录 ============ */
@@ -2701,25 +2819,35 @@
     // 这条记录当前是否已挂了非必要条目（勾了就同步，取消勾选就解绑）
     const linkedFriv = () => !!tx.frivId && frivItems().some((x) => x.id === tx.frivId);
     let frivOn = linkedFriv();
+    // 转账的从/到跨「类型切换重绘」保留，跟 frivOn 一个道理
+    let trFrom = tx.from || Object.keys(D.finance.bals)[0] || "";
+    let trTo = tx.to || Object.keys(D.finance.bals)[1] || Object.keys(D.finance.bals)[0] || "";
     const draw = (tp, cat) => {
+      const isT = tp === "transfer";
       const cs = catsOf(tp);
-      const curCat = cs.indexOf(cat) >= 0 ? cat : cs[0];
+      const curCat = isT ? "" : (cs.indexOf(cat) >= 0 ? cat : cs[0]);
       $("#modalBody").innerHTML = `
-        <div class="card-sub mb-2">修改记录 · 原 ${tx.date.slice(5)} ${tx.cat}</div>
+        <div class="card-sub mb-2">修改记录 · 原 ${tx.date.slice(5)} ${tx.type === "transfer" ? "转账" : tx.cat}</div>
         <div style="display:flex;gap:8px;margin-bottom:12px;">
           <button class="btn btn-sm ${tp === "expense" ? "btn-primary" : "btn-ghost"}" data-et="expense" style="flex:1;">📉 支出</button>
           <button class="btn btn-sm ${tp === "income" ? "btn-primary" : "btn-ghost"}" data-et="income" style="flex:1;">📈 收入</button>
+          <button class="btn btn-sm ${isT ? "btn-primary" : "btn-ghost"}" data-et="transfer" style="flex:1;">🔁 转账</button>
         </div>
         <div class="fld mb-2"><label>日期</label><input id="etDate" type="date" value="${tx.date}"></div>
+        ${isT ? `
+        <div class="form form-2 mt-2">
+          <div class="fld"><label>从（转出）</label><select id="etFrom">${acctList().map((a) => `<option${a === trFrom ? " selected" : ""}>${esc(a)}</option>`).join("")}</select></div>
+          <div class="fld"><label>到（转入）</label><select id="etTo">${acctList().map((a) => `<option${a === trTo ? " selected" : ""}>${esc(a)}</option>`).join("")}</select></div>
+        </div>` : `
         <div class="fld mb-2"><label>分类</label>
           <div style="display:flex;gap:6px;">
             <select id="etCat" style="flex:1;min-width:0;">${cs.map((c) => `<option${c === curCat ? " selected" : ""}>${esc(c)}</option>`).join("")}</select>
             <button class="btn btn-sm btn-primary" id="etAddCat" title="新增分类" style="flex:0 0 auto;width:36px;padding:0;font-size:18px;line-height:1;">+</button>
           </div>
-        </div>
+        </div>`}
         <div class="form form-2 mt-2">
           <div class="fld"><label>金额</label><input id="etAmt" type="number" step="0.01" value="${tx.amt}"></div>
-          <div class="fld"><label>账户</label><select id="etAcct">${acctList().map((a) => `<option${a === tx.acct ? " selected" : ""}>${esc(a)}</option>`).join("")}</select></div>
+          ${isT ? "" : `<div class="fld"><label>账户</label><select id="etAcct">${acctList().map((a) => `<option${a === tx.acct ? " selected" : ""}>${esc(a)}</option>`).join("")}</select></div>`}
         </div>
         <div class="fld mt-2"><label>备注</label><input id="etNote" value="${esc(tx.note || "")}" placeholder="可选"></div>
         ${tp === "expense" ? `<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px;cursor:pointer;"><input type="checkbox" id="etFriv" style="width:18px;height:18px;accent-color:#be123c;"${frivOn ? " checked" : ""}>非必要支出 💸 · 同步记入非必要开支板块</label>` : ""}
@@ -2730,32 +2858,37 @@
         <input type="hidden" id="etType" value="${tp}">
       `;
       $$("#modalBody [data-et]").forEach((b) => b.onclick = () => draw(b.dataset.et, curCat));
-      $("#etAddCat").onclick = () => addCatQuick(tp, (n) => { openModal("✎ 修改记录", ""); draw(tp, n); });
-      // 记住勾选态，这样切支出/收入类型重绘后不会莫名被清掉
       const ef = $("#etFriv");
       if (ef) ef.onchange = () => { frivOn = ef.checked; };
+      const ff = $("#etFrom"), tt = $("#etTo");
+      if (ff) ff.onchange = () => { trFrom = ff.value; };
+      if (tt) tt.onchange = () => { trTo = tt.value; };
+      const eac = $("#etAddCat");
+      if (eac) eac.onclick = () => addCatQuick(tp, (n) => { openModal("✎ 修改记录", ""); draw(tp, n); });
       $("#etCancel").onclick = () => closeModal();
       $("#etSave").onclick = () => {
         const date = $("#etDate").value;
         const newType = $("#etType").value;
-        const newCat = $("#etCat").value;
+        const newIsT = newType === "transfer";
         const amt = +$("#etAmt").value;
-        const acct = $("#etAcct").value;
         const note = $("#etNote").value.trim();
         if (!date || isNaN(amt) || amt <= 0) { toast("请填写完整", "warn"); return; }
+        let newCat = null, newAcct = null, newFrom = null, newTo = null;
+        if (newIsT) {
+          newFrom = $("#etFrom").value; newTo = $("#etTo").value;
+          if (!newFrom || !newTo || newFrom === newTo) { toast("转出和转入不能相同", "warn"); return; }
+        } else { newCat = $("#etCat").value; newAcct = $("#etAcct").value; }
         /* 余额修正（关键）：先按旧值「撤销」，再按新值「计入」。
-           不做这两步的话，改金额 / 改支出↔收入 / 换账户 都会让账户余额对不上账。 */
-        if (tx.acct && D.finance.bals[tx.acct] !== undefined) {
-          D.finance.bals[tx.acct] += tx.type === "expense" ? +tx.amt : -tx.amt;
-        }
-        tx.date = date; tx.type = newType; tx.cat = newCat; tx.amt = amt; tx.acct = acct; tx.note = note;
-        if (acct && D.finance.bals[acct] !== undefined) {
-          D.finance.bals[acct] += newType === "expense" ? -amt : amt;
-        }
+           不做这两步的话，改金额 / 改类型 / 换账户 都会让账户余额对不上账。 */
+        applyTxnBal(tx, -1);
+        tx.date = date; tx.type = newType; tx.amt = amt; tx.note = note;
+        if (newIsT) { tx.from = newFrom; tx.to = newTo; delete tx.cat; delete tx.acct; }
+        else { tx.cat = newCat; tx.acct = newAcct; delete tx.from; delete tx.to; }
+        applyTxnBal(tx, 1);
         /* 非必要联动：改前记下状态，用于提示文案
            ① 原本没勾、现在勾了 → 新增一条非必要
            ② 原本勾了、现在还勾 → 同步新的日期/备注/金额
-           ③ 原本勾了、现在取消 → 删掉那条非必要（收入态一律视作不勾） */
+           ③ 原本勾了、现在取消 → 删掉那条非必要（收入/转账态一律视作不勾） */
         const wasFriv = linkedFriv();
         const wantFriv = newType === "expense" && !!($("#etFriv") && $("#etFriv").checked);
         let frivChanged = false;
@@ -2767,7 +2900,7 @@
         fCurMonth = date.slice(0, 7); $("#fltMonth").value = fCurMonth;
         renderTxList(); renderAssets(); refreshFinCharts(); renderOverview();
         if (frivChanged) refreshFriv();
-        toast("已保存修改" + (wantFriv ? " · 已同步非必要 💸" : (wasFriv ? " · 已移出非必要" : "")));
+        toast(newIsT ? `已保存修改 · ${newFrom} → ${newTo}` : "已保存修改" + (wantFriv ? " · 已同步非必要 💸" : (wasFriv ? " · 已移出非必要" : "")));
       };
     };
     openModal("✎ 修改记录", ""); draw(tx.type, tx.cat);
@@ -2786,12 +2919,11 @@
     };
     const accts = () => Object.keys(D.finance.bals);
     const draw = (type, selCat) => {
-      const cats = qChips(type);
-      const selAcct = accts()[0] || "现金";
-      // 选中态按「分类名」而非下标，这样新增的分类也能被正确预选
+      const isT = type === "transfer";
+      const cats = isT ? [] : qChips(type);
       let curCat = (selCat && cats.indexOf(selCat) >= 0) ? selCat : cats[0];
       // 日期置顶：补录/改日期最高频，放最前。
-      // 切换支出/收入会整块重绘 modalBody，这里保留已选日期，
+      // 切换支出/收入/转账会整块重绘 modalBody，这里保留已选日期，
       // 否则一改类型日期就被重置回今天（日期在最前时这个体验问题会更明显）。
       const prevDateEl = $("#qtDate");
       const keepDate = (prevDateEl && prevDateEl.value) || effectiveToday();
@@ -2800,17 +2932,24 @@
         <div style="display:flex;gap:8px;margin-bottom:12px;">
           <button class="btn btn-sm ${type === "expense" ? "btn-primary" : "btn-ghost"}" data-qt="expense" style="flex:1;">📉 支出</button>
           <button class="btn btn-sm ${type === "income" ? "btn-primary" : "btn-ghost"}" data-qt="income" style="flex:1;">📈 收入</button>
+          <button class="btn btn-sm ${isT ? "btn-primary" : "btn-ghost"}" data-qt="transfer" style="flex:1;">🔁 转账</button>
         </div>
         <div class="fld mb-2"><label>日期</label><input id="qtDate" type="date" value="${keepDate}"></div>
+        ${isT ? `
+        <div class="form form-2 mt-2">
+          <div class="fld"><label>从（转出）</label><select id="qtFrom">${accts().map((a) => `<option>${esc(a)}</option>`).join("")}</select></div>
+          <div class="fld"><label>到（转入）</label><select id="qtTo">${accts().map((a) => `<option>${esc(a)}</option>`).join("")}</select></div>
+        </div>
+        <div class="card-sub mt-1" id="qtKindHint">转入储蓄账户＝储蓄 · 从储蓄转出＝应急 · 其它＝流转</div>` : `
         <div class="fld mb-2"><label>分类（按最近使用频率）</label>
           <div style="display:flex;flex-wrap:wrap;gap:6px;" id="qtChips">
             ${cats.map((c) => `<button class="flow-btn ${c === curCat ? "qt-sel" : ""}" data-qc="${esc(c)}" style="padding:6px 12px;font-size:13px;">${esc(c)}</button>`).join("")}
             <button class="flow-btn" id="qtAddCat" title="新增分类" style="padding:6px 10px;font-size:14px;">＋</button>
           </div>
-        </div>
+        </div>`}
         <div class="form form-2 mt-2">
           <div class="fld"><label>金额（元）</label><input id="qtAmt" type="number" step="0.01" placeholder="0.00" style="font-size:18px;font-weight:800;" autofocus></div>
-          <div class="fld"><label>账户</label><select id="qtAcct">${accts().map((a) => `<option>${esc(a)}</option>`).join("")}</select></div>
+          ${isT ? "" : `<div class="fld"><label>账户</label><select id="qtAcct">${accts().map((a) => `<option>${esc(a)}</option>`).join("")}</select></div>`}
         </div>
         <div class="fld mt-2"><label>备注</label><input id="qtNote" placeholder="可选"></div>
         ${type === "expense" ? `<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px;cursor:pointer;"><input type="checkbox" id="qtFriv" style="width:18px;height:18px;accent-color:#be123c;">非必要支出 💸 · 同步记入非必要开支板块</label>` : ""}
@@ -2820,26 +2959,32 @@
         </div>
         <input type="hidden" id="qtType" value="${type}">
       `;
-      $("#qtAcct").value = selAcct;
       $$("#qtChips [data-qc]").forEach((b) => b.onclick = () => { $$("#qtChips [data-qc]").forEach((x) => x.classList.remove("qt-sel")); b.classList.add("qt-sel"); curCat = b.dataset.qc; });
       $$("#modalBody [data-qt]").forEach((b) => b.onclick = () => draw(b.dataset.qt));
       // 分类区「+」：新增后回到快速记账，并自动选中刚加的分类
       const qac = $("#qtAddCat");
       if (qac) qac.onclick = () => addCatQuick(type, (n) => { openModal("💎 快速记账", ""); draw(type, n); });
       const saveOne = (keep) => {
-        const date = $("#qtDate").value, t = $("#qtType").value, amt = +$("#qtAmt").value, acct = $("#qtAcct").value, note = $("#qtNote").value.trim();
+        const date = $("#qtDate").value, t = $("#qtType").value, amt = +$("#qtAmt").value, note = $("#qtNote").value.trim();
         if (!date || isNaN(amt) || amt <= 0) { toast("请填金额", "warn"); return; }
-        if (!curCat) { toast("请选分类", "warn"); return; }
-        const rec = { id: "t" + Date.now(), date, type: t, cat: curCat, amt, acct, note, ts: Date.now() };
+        let rec;
+        if (t === "transfer") {
+          const from = $("#qtFrom").value, to = $("#qtTo").value;
+          if (!from || !to || from === to) { toast("转出和转入不能相同", "warn"); return; }
+          rec = { id: newTxnId(), date, type: "transfer", amt, from, to, note, ts: Date.now() };
+        } else {
+          if (!curCat) { toast("请选分类", "warn"); return; }
+          rec = { id: newTxnId(), date, type: t, cat: curCat, amt, acct: $("#qtAcct").value, note, ts: Date.now() };
+        }
         D.finance.txns.push(rec);
-        if (D.finance.bals[acct]) D.finance.bals[acct] += t === "expense" ? -amt : amt;
-        // 勾了「非必要」→ 同步一条到非必要开支板块（仅支出；收入无此概念）
+        applyTxnBal(rec, 1);
+        // 勾了「非必要」→ 同步一条到非必要开支板块（仅支出；收入/转账无此概念）
         const isFriv = !!(($("#qtFriv") && $("#qtFriv").checked) && t === "expense");
-        if (isFriv) rec.frivId = pushFriv(date, note || curCat, amt);
+        if (isFriv) rec.frivId = pushFriv(date, note || rec.cat, amt);
         save();
         fCurMonth = date.slice(0, 7);
         renderOverview(); refreshFinCharts(); renderFinance();
-        toast("已记账 · " + (t === "expense" ? "-" : "+") + MM(amt) + (isFriv ? " · 已同步非必要 💸" : ""));
+        toast(t === "transfer" ? `已转账 · ${rec.from} → ${rec.to} ${MM(amt)}` : "已记账 · " + (t === "expense" ? "-" : "+") + MM(amt) + (isFriv ? " · 已同步非必要 💸" : ""));
         if (keep) {
           $("#qtAmt").value = ""; $("#qtNote").value = "";
           if ($("#qtFriv")) $("#qtFriv").checked = false;
@@ -2894,8 +3039,10 @@
     const cardHtml = entries.length ? entries.map(([n, v]) => {
       const pct = total > 0 ? (v / total * 100) : 0;
       const neg = v < 0;
+      const cls = acctClass(n);
+      const tagHtml = `<span class="tag ${cls === "save" ? "tag-green" : cls === "earmark" ? "tag-amber" : "tag-gray"}" style="margin-left:6px;font-size:10px;padding:1px 7px;">${ACCT_CLASS_LABEL[cls]}</span>`;
       return `<div class="acct-card" data-acct-name="${esc(n)}">
-          <div class="acct-name">${esc(n)}</div>
+          <div class="acct-name">${esc(n)}${tagHtml}</div>
           <div class="acct-amt" style="color:${neg ? "#fb7185" : "var(--text)"}">${MM(v)}</div>
           <div class="acct-bar"><div class="acct-bar-fill" style="width:${Math.max(2, pct)}%;background:${neg ? "#fb7185" : "linear-gradient(90deg,#34d399,#10b981)"};"></div></div>
           <div class="acct-meta">
@@ -2931,12 +3078,15 @@
       $$("#debtList [data-deldebt]").forEach((b) => b.onclick = () => { D.finance.debts.splice(+b.dataset.deldebt, 1); save(); renderAssets(); refreshFinCharts(); renderOverview(); });
     }
 
-    /* 资产构成横向堆叠条 — 同时填充总览和财务页 */
+    /* 资产构成横向堆叠条 — 同时填充总览和财务页（账户按新分类拆成流动/储蓄/专款） */
+    const spBar = acctSplit();
     const segs = [
-      { name: "账户", value: aTot(), color: "#10b981" },
+      { name: "流动资金", value: spBar.liquid, color: "#10b981" },
+      { name: "储蓄存款", value: spBar.save, color: "#0ea5e9" },
+      { name: "专款", value: spBar.earmark, color: "#f59e0b" },
       { name: "理财", value: iTot(), color: "#3b82f6" },
-      { name: "公积金", value: hTot(), color: "#f59e0b" },
-      { name: "社保", value: sTot(), color: "#a855f7" },
+      { name: "公积金", value: hTot(), color: "#a855f7" },
+      { name: "社保", value: sTot(), color: "#ec4899" },
     ].filter((s) => s.value > 0);
     const tot = segs.reduce((s, x) => s + x.value, 0) || 1;
     const barHtml = `<div class="asset-bar-track">${segs.map((s) => `<div class="asset-bar-seg" style="width:${(s.value / tot * 100).toFixed(2)}%;background:${s.color};" title="${s.name} ${MM(s.value)}"></div>`).join("")}</div>`;
@@ -2945,24 +3095,41 @@
     $$(".asset-legend").forEach((l) => (l.innerHTML = legendHtml));
   }
   function quickAcctEdit(name) {
+    const curCls = acctClass(name);
     openModal("编辑账户 · " + name, `
       <div class="fld mb-2"><label>账户名</label><input id="qaName" value="${esc(name)}"></div>
       <div class="fld mb-2"><label>余额</label><input id="qaBal" type="number" step="0.01" value="${D.finance.bals[name] || 0}" style="font-size:18px;font-weight:800;"></div>
+      <div class="fld mb-2"><label>类型</label><select id="qaType">
+        <option value="liquid"${curCls === "liquid" ? " selected" : ""}>流动资金 · 可随时动用</option>
+        <option value="save"${curCls === "save" ? " selected" : ""}>储蓄存款 · 不动，计入储蓄率</option>
+        <option value="earmark"${curCls === "earmark" ? " selected" : ""}>专款 · 不计入流动资金</option>
+      </select></div>
+      <div class="card-sub mb-2">默认规则：名字含「建行」= 储蓄存款，含「课费」= 专款，其余 = 流动资金；这里可手动改。</div>
       <button class="btn btn-primary w-full" id="qaSave">保存</button>
     `);
     $("#qaSave").onclick = () => {
       const newName = $("#qaName").value.trim(); const newBal = +$("#qaBal").value || 0;
+      const newCls = $("#qaType").value;
       if (!newName) { toast("请输入名称", "warn"); return; }
       if (newName !== name) {
         if (D.finance.bals[newName] != null) { toast("已存在同名账户", "warn"); return; }
         const oldBal = D.finance.bals[name];
         delete D.finance.bals[name];
         D.finance.bals[newName] = newBal;
-        D.finance.txns.forEach((t) => { if (t.acct === name) t.acct = newName; });
+        // 老记录 hitch：记账的 acct 和转账的 from/to 都要跟着改名，否则余额对不上
+        D.finance.txns.forEach((t) => {
+          if (t.acct === name) t.acct = newName;
+          if (t.from === name) t.from = newName;
+          if (t.to === name) t.to = newName;
+        });
+        if (D.finance.acctClass && D.finance.acctClass[name]) { D.finance.acctClass[newName] = D.finance.acctClass[name]; delete D.finance.acctClass[name]; }
       } else {
         D.finance.bals[name] = newBal;
       }
-      save(); closeModal(); renderAssets(); refreshFinCharts(); renderOverview(); popAcct(); toast("已更新");
+      // 类型显式落盘（改名后写在新的键上）
+      D.finance.acctClass = D.finance.acctClass || {};
+      D.finance.acctClass[newName] = newCls;
+      save(); closeModal(); renderAssets(); refreshFinCharts(); renderOverview(); renderFinance(); popAcct(); toast("已更新");
     };
   }
   function addAcct() { const n = $("#newAc").value.trim(), b = +$("#newBal").value || 0; if (!n) { toast("请输入名称", "warn"); return; } if (D.finance.bals[n] != null) { toast("已存在", "warn"); return; } D.finance.bals[n] = b; save(); $("#newAc").value = ""; $("#newBal").value = ""; const row = $("#addAcRow"); if (row) row.style.display = "none"; popAcct(); renderAssets(); refreshFinCharts(); renderOverview(); toast("已添加"); }
@@ -3019,17 +3186,20 @@
     drawDoughnut($("#chExp"), ecItems.length ? ecItems : [{ label: "无", value: 1, color: "#e2e8f0" }], { center: FIN.on ? "🔒" : fmt(ms.exp), centerSub: "支出" });
     drawDoughnut($("#chInc"), icItems.length ? icItems : [{ label: "无", value: 1, color: "#e2e8f0" }], { center: FIN.on ? "🔒" : fmt(ms.inc), centerSub: "收入" });
     const mk = allMonths().slice(-12);
-    /* 趋势图改为堆叠柱：收入/支出/结余三组并排柱，比 line 更直观对比量级 */
-    drawBar($("#chTrend"), mk.map((m) => +m.split("-")[1] + "月"), [
+    /* 趋势图改为堆叠柱：收入/支出/结余/存钱四组并排柱，比 line 更直观对比量级。
+       存钱 = 当月净转入储蓄账户（转账，不影响收支）；为负表示当月从储蓄净流出（应急）。 */
+    drawBar($("#chTrend"), mk.map((m) => +m.split("-")[1]), [
       { data: mk.map((m) => monthSummary(m).inc), color: "#10b981" },
       { data: mk.map((m) => monthSummary(m).exp), color: "#f43f5e" },
       { data: mk.map((m) => monthSummary(m).bal), color: "#3b82f6" },
+      { data: mk.map((m) => monthSummary(m).saveNet), color: "#8b5cf6" },
     ], { h: 270 });
     const yr = +$("#yrSel").value; const months = Array.from({ length: 12 }, (_, i) => `${yr}-${String(i + 1).padStart(2, "0")}`);
-    drawBar($("#chYear"), months.map((m) => +m.split("-")[1] + "月"), [
+    drawBar($("#chYear"), months.map((m) => +m.split("-")[1]), [
       { data: months.map((m) => monthSummary(m).inc), color: "#10b981" },
       { data: months.map((m) => monthSummary(m).exp), color: "#f43f5e" },
       { data: months.map((m) => monthSummary(m).bal), color: "#3b82f6" },
+      { data: months.map((m) => monthSummary(m).saveNet), color: "#8b5cf6" },
     ], { h: 260 });
   }
 
