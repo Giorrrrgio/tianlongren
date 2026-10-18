@@ -3491,7 +3491,22 @@
         // 必须用相对路径 './sw.js'：站点部署在 /tianlongren/ 子目录，
         // 写绝对路径 '/sw.js' 会去请求站点根的 giorrrrgio.github.io/sw.js → 404，
         // 注册被 .catch 静默吞掉，PWA 离线能力其实一直没生效过。
-        navigator.serviceWorker.register('./sw.js')
+        //
+        // ⚠️ updateViaCache:'none'：浏览器检查「是否有新版 sw.js」时，
+        // 默认会先看浏览器自己的 HTTP 缓存。Pages 对 .js 返回 max-age=600，
+        // 于是新版 SW 最长 10 分钟内压根不会被发现。设为 none 强制走网络校验。
+        //
+        // ⚠️ controllerchange → 刷新一次：新的 SW activate 后会 claim 住已打开的页面，
+        // 但页面里的 JS 还是旧的。iOS 的 PWA 是常驻会话、不会自动重新导航，
+        // 必须靠这一次 reload 让新代码真正跑起来（刷新后新 SW 已在控制中，不会循环）。
+        let _swReloading = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (_swReloading) return;
+          _swReloading = true;
+          console.log('[SW] 新版本已接管，刷新页面加载新代码');
+          setTimeout(() => window.location.reload(), 120);
+        });
+        navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
           .then((reg) => console.log('[SW] 注册成功，scope:', reg.scope))
           .catch((err) => console.warn('[SW] 注册失败:', err));
       });
