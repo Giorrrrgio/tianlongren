@@ -653,6 +653,7 @@ textarea { width: 100%; min-height: 80px; resize: vertical; font-family: inherit
 /* ========== 今日动线快捷栏 ========== */
 .flow-bar { display:flex;flex-wrap:wrap;gap:8px;margin-top:10px; }
 .flow-btn { padding:9px 14px;border-radius:var(--r-full);border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:13px;font-weight:700;cursor:pointer;transition:transform .12s, border-color .12s, background .12s; }
+.flow-btn.done { background: var(--green-soft); border-color: var(--green-soft); color: var(--green-ink); }
 .flow-btn:hover { transform:translateY(-1px);border-color:var(--accent);background:var(--accent-soft); }
 .flow-btn.qt-sel { background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 2px 8px -2px rgba(99,102,241,.4); }
 
