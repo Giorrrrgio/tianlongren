@@ -260,6 +260,9 @@ body {
 .hero-dark .hd-trend { display:inline-block; font-size:var(--fs-sm); font-weight:700; padding:3px 10px; border-radius:999px; margin-bottom:14px; }
 .hero-dark .hd-trend.up { background:rgba(16,185,129,.18); color:#34d399; }
 .hero-dark .hd-trend.down { background:rgba(244,63,94,.18); color:#fb7185; }
+/* 存款次级行：跟在最大的流动资金数字后面 */
+.hero-dark .hd-sub { font-size:var(--fs-base); font-weight:600; color:#c3cbdd; margin:-10px 0 16px; }
+.hero-dark .hd-sub .num { font-family:var(--font-num); font-weight:800; color:#fff; }
 .hero-dark .asset-edit { margin-top: 18px; background: var(--card); color: var(--text); border-radius: var(--r-md); padding: 0; }
 .hero-dark .asset-edit > summary { padding:12px 16px; cursor:pointer; font-weight:700; font-size:var(--fs-sm); color:var(--text); list-style:none; user-select:none; }
 .hero-dark .asset-edit > summary::before { content:"▸ "; color:var(--accent); }
