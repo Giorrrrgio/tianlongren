@@ -3267,7 +3267,7 @@
   };
   function navigate(p) {
     curPage = p;
-    $$(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.page === p));
+    $$(".nav-item, .tab-item").forEach((b) => b.classList.toggle("active", b.dataset.page === p));
     $$(".page").forEach((pg) => pg.classList.toggle("active", pg.id === "page-" + p));
     closeDrawer();
     // 只渲染目标页面（首次加载由 renderAll 统一处理）
@@ -3289,6 +3289,11 @@
   /* ============ 事件 & 启动 ============ */
   function bind() {
     $$(".nav-item").forEach((b) => (b.onclick = () => navigate(b.dataset.page)));
+    // 底部快捷栏：普通项直接跳页，「菜单」项复用抽屉（桌面端 tabbar 隐藏，绑了也不影响）
+    $$(".tab-item").forEach((b) => (b.onclick = () => {
+      if (b.dataset.page === "__menu") openDrawer();
+      else navigate(b.dataset.page);
+    }));
     $("#menuBtn").onclick = openDrawer;
     $("#backdrop").onclick = closeDrawer;
     $("#modalClose").onclick = closeModal;
