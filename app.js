@@ -905,6 +905,16 @@
     const tg = dayTarget(t); const inT = intakeOf(t);
     const wToday = (D.nutrition.weight || []).some((x) => x.date === t);
     const water = (D.nutrition.water[t] || {}).water || 0;
+    /* 一键直达的「今日已登记」状态：登记过的项底色变绿 + ✓，每天提醒别漏 */
+    const fd = {
+      weight: wToday,
+      calendar: !!(D.fitness.calendar && D.fitness.calendar[t]),
+      meal: ["breakfast", "lunch", "dinner", "snack"].some((k) => ((D.nutrition.daily[t] || {})[k] || []).length > 0),
+      finance: (D.finance.txns || []).some((x) => x.date === t),
+      punchIn: !!(D.punch && D.punch[t] && Object.keys(D.punch[t].times || {}).length > 0),
+      water: water > 0,
+    };
+    const fdN = Object.values(fd).filter(Boolean).length;
     const nw = netWorth(); const ms = monthSummary(cmk());
 
     const wArr = (D.nutrition.weight || []).slice().sort((a, b) => a.date.localeCompare(b.date));
@@ -938,14 +948,14 @@
 
       <!-- 一键直达：置顶 -->
       <div class="card">
-        <div class="card-head"><div class="card-title">今日动线 · 一键直达</div><span class="card-sub">按你的日常顺序</span></div>
+        <div class="card-head"><div class="card-title">今日动线 · 一键直达</div><span class="card-sub">今日已登记 ${fdN}/6</span></div>
         <div class="flow-bar">
-          <button class="flow-btn" data-q="weight">🐖 体重</button>
-          <button class="flow-btn" data-q="calendar">📅 日历</button>
-          <button class="flow-btn" data-q="meal">🍣 餐食</button>
-          <button class="flow-btn" data-q="finance">💎 记账</button>
-          <button class="flow-btn" data-q="punchIn">🕗 打卡</button>
-          <button class="flow-btn" data-q="water">🥃 喝水</button>
+          <button class="flow-btn ${fd.weight ? "done" : ""}" data-q="weight">🐖 体重${fd.weight ? " ✓" : ""}</button>
+          <button class="flow-btn ${fd.calendar ? "done" : ""}" data-q="calendar">📅 日历${fd.calendar ? " ✓" : ""}</button>
+          <button class="flow-btn ${fd.meal ? "done" : ""}" data-q="meal">🍣 餐食${fd.meal ? " ✓" : ""}</button>
+          <button class="flow-btn ${fd.finance ? "done" : ""}" data-q="finance">💎 记账${fd.finance ? " ✓" : ""}</button>
+          <button class="flow-btn ${fd.punchIn ? "done" : ""}" data-q="punchIn">🕗 打卡${fd.punchIn ? " ✓" : ""}</button>
+          <button class="flow-btn ${fd.water ? "done" : ""}" data-q="water">🥃 喝水${fd.water ? " ✓" : ""}</button>
         </div>
       </div>
 
