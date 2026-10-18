@@ -263,6 +263,18 @@ body {
 /* 存款次级行：跟在最大的流动资金数字后面 */
 .hero-dark .hd-sub { font-size:var(--fs-base); font-weight:600; color:#c3cbdd; margin:-10px 0 16px; }
 .hero-dark .hd-sub .num { font-family:var(--font-num); font-weight:800; color:#fff; }
+/* hero 第二优先级：储蓄存款独立色块（紧跟流动资金） */
+.hero-dark .hd-save { margin: 0 0 16px; padding: 12px 16px 10px; background: rgba(56,189,248,.10); border: 1px solid rgba(56,189,248,.25); border-radius: var(--r-md); }
+.hero-dark .hd-save .hd-label { color: #7dd3fc; font-weight: 700; }
+.hero-dark .hd-save-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 2px; }
+.hero-dark .hd-second { font-size: var(--fs-2xl); font-weight: 800; font-family: var(--font-num); color: #7dd3fc; letter-spacing: -0.8px; line-height: 1.15; }
+.hero-dark .hd-save-rate { font-size: var(--fs-sm); color: #bae6fd; text-align: right; line-height: 1.5; white-space: nowrap; }
+.hero-dark .hd-save-rate b { display: block; font-size: var(--fs-lg); font-family: var(--font-num); color: #e0f2fe; }
+.hero-dark .hd-save-earmark { font-size: var(--fs-sm); color: #bae6fd; margin-top: 6px; }
+.hero-dark .hd-save-earmark .num { font-family: var(--font-num); font-weight: 800; color: #e0f2fe; }
+/* 净资产沉到页脚小字（不再是第一眼） */
+.hero-dark .hd-foot { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.10); display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: var(--fs-sm); color: #8b93a7; }
+.hero-dark .hd-foot .num { font-family: var(--font-num); font-weight: 800; font-size: var(--fs-base); }
 .hero-dark .asset-edit { margin-top: 18px; background: var(--card); color: var(--text); border-radius: var(--r-md); padding: 0; }
 .hero-dark .asset-edit > summary { padding:12px 16px; cursor:pointer; font-weight:700; font-size:var(--fs-sm); color:var(--text); list-style:none; user-select:none; }
 .hero-dark .asset-edit > summary::before { content:"▸ "; color:var(--accent); }
@@ -659,6 +671,22 @@ textarea { width: 100%; min-height: 80px; resize: vertical; font-family: inherit
 .flow-btn.done { background: var(--green-soft); border-color: var(--green-soft); color: var(--green-ink); }
 .flow-btn:hover { transform:translateY(-1px);border-color:var(--accent);background:var(--accent-soft); }
 .flow-btn.qt-sel { background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 2px 8px -2px rgba(99,102,241,.4); }
+
+/* 页面顶部主动作按钮：称个重 / 打个卡 / 喝口水 / 记一餐 / 记一笔 */
+.page-cta {
+  width: 100%; min-height: 54px; margin-bottom: 12px;
+  border: 0; border-radius: var(--r-md);
+  background: linear-gradient(135deg, var(--accent-strong), var(--accent));
+  color: #fff; font-size: 16px; font-weight: 800; font-family: inherit;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  box-shadow: 0 8px 20px -6px rgba(14,159,110,.45);
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: transform .12s ease, box-shadow .12s ease, filter .12s ease;
+}
+.page-cta:hover { filter: brightness(1.06); }
+.page-cta:active { transform: scale(.97); box-shadow: 0 2px 8px -2px rgba(14,159,110,.4); }
+.page-cta .pc-emoji { font-size: 20px; line-height: 1; }
+.page-cta .pc-hint { font-size: 12px; font-weight: 600; opacity: .82; }
 
 
 /* ========== 财务加密锁 ========== */
