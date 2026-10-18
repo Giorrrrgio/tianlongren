@@ -1,9 +1,9 @@
 /* 天龙人 Service Worker
  * 缓存策略：Cache First（离线优先，后台静默更新）
- * 版本：tlr-v10
+ * 版本：tlr-v11
  */
 
-const CACHE_NAME = 'tlr-v10';
+const CACHE_NAME = 'tlr-v11';
 
 // 核心资源：小、必需。用 addAll 一次性预缓存。
 // v7 变更：体重识别已从「截图 OCR」改为「粘贴文本解析」，16MB 的 PP-OCRv4 模型
