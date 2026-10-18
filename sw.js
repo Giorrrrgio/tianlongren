@@ -5,7 +5,7 @@
  *      「网络优先」失效，导致部署后用户仍拿到旧代码）；注册时加 updateViaCache:'none'。
  */
 
-const CACHE_NAME = 'tlr-v15';
+const CACHE_NAME = 'tlr-v16';
 
 // 核心资源：小、必需。用 addAll 一次性预缓存。
 // v7 变更：体重识别已从「截图 OCR」改为「粘贴文本解析」，16MB 的 PP-OCRv4 模型
