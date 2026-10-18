@@ -158,10 +158,7 @@ body {
 .nav-item:hover { background: rgba(255,255,255,.07); color: #fff; }
 .nav-item.active { background: rgba(255,255,255,.12); color: #fff; }
 .nav-item.active::before { content: ""; position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 3px; height: 20px; border-radius: 3px; background: var(--accent); }
-.nav-item .nico { width: 22px; height: 22px; text-align: center; flex: none; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
-.nav-item .nico svg { width: 22px; height: 22px; display: block; }
-/* 当前页图标加粗一档，配合左侧指示条，弱视力也能一眼定位 */
-.nav-item.active .nico svg { stroke-width: 2.2; }
+.nav-item .nico { font-size: 20px; width: 22px; height: 22px; text-align: center; flex: none; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
 .side-foot { margin-top: auto; font-size: 11px; color: #5d6577; letter-spacing: .2px; }
 
 /* ========== 手机底部快捷栏（≤768px 才显示，上面还有抽屉菜单兜底） ========== */
@@ -180,12 +177,10 @@ body {
   background: transparent; color: var(--ink-3); font-family: inherit; font-size: 10px; font-weight: 700;
   cursor: pointer; transition: color .15s, background .15s; -webkit-tap-highlight-color: transparent;
 }
-.tab-item .nico { width: 23px; height: 23px; display: flex; align-items: center; justify-content: center; }
-.tab-item .nico svg { width: 23px; height: 23px; display: block; }
+.tab-item .nico { font-size: 21px; width: 23px; height: 23px; display: flex; align-items: center; justify-content: center; }
 .tab-item .tab-l { line-height: 1.2; letter-spacing: .2px; white-space: nowrap; }
 .tab-item:active { background: var(--glass-2); }
 .tab-item.active { color: var(--accent-ink); background: var(--accent-soft); }
-.tab-item.active .nico svg { stroke-width: 2.2; }
 @media (max-width: 768px) {
   .tabbar { display: flex; }
 }
