@@ -2076,7 +2076,7 @@
         if (e.parts && e.parts.length) { if (e.parts.includes("休息")) { cls += " rest"; part = "休"; } else { cls += " trained"; part = e.parts.join("·"); } }
         if (e.creatine) badges += '<span class="bdg bdg-cr">💊</span>'; if (e.fishOil) badges += '<span class="bdg bdg-fo">🐟</span>';
       }
-      g += `<div class="${cls}" data-date="${ds}"><div class="cell-top"><span class="cell-d">${d}</span>${badges ? `<span class="cell-badges">${badges}</span>` : ""}</div>${part ? `<div class="cell-part">${part}</div>` : ""}</div>`;
+      g += `<div class="${cls}" data-date="${ds}"><div class="cell-d">${d}</div><div class="cell-badges">${badges}</div>${part ? `<div class="cell-part">${part}</div>` : ""}</div>`;
     }
     $("#" + gridId).innerHTML = g;
     $$("#" + gridId + " [data-date]").forEach((c) => c.onclick = () => openDayModal(c.dataset.date));
