@@ -554,22 +554,23 @@ textarea { width: 100%; min-height: 80px; resize: vertical; font-family: inherit
 .cal-week span:nth-child(7) { color: #f43f5e; }
 .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
 .cal-cell {
-  aspect-ratio: 1; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border);
-  display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 2px;
-  padding: 5px 4px 4px; cursor: pointer; position: relative; overflow: hidden;
+  aspect-ratio: 1 / 1.12; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border);
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 1px;
+  padding: 3px 2px; cursor: pointer; position: relative; overflow: hidden;
   transition: transform .12s, box-shadow .12s;
 }
 .cal-cell:hover { transform: translateY(-2px); box-shadow: var(--sh-sm); }
+.cal-cell.other { background: transparent; border-color: transparent; box-shadow: none; }
+.cal-cell.other:hover { transform: none; box-shadow: none; }
 .cal-cell.today { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .cal-cell.trained { background: var(--green-soft); color: var(--green-ink); border-color: var(--green-soft); }
 .cal-cell.rest { background: var(--blue-soft); color: var(--blue-ink); border-color: var(--blue-soft); }
-/* 单元格：第一行「日期 + 肌酸/鱼油徽章」并排（都在文档流里，永远不会盖住日期），第二行训练部位 */
-.cal-cell .cell-top { display: flex; align-items: center; justify-content: space-between; gap: 2px; width: 100%; }
-.cal-cell .cell-d { font-size: 13px; font-weight: 800; font-family: var(--font-num); line-height: 1.15; }
-.cal-cell.today .cell-d { color: var(--accent); }
-.cal-cell .cell-part { font-size: 9px; font-weight: 700; line-height: 1.15; text-align: center; opacity: .78; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cell-badges { display: inline-flex; gap: 1px; font-size: 11px; line-height: 1; flex: none; }
-.bdg { display: inline-flex; align-items: center; justify-content: center; font-size: 11px; line-height: 1; }
+/* 单元格三行式：日期（居中，今天为实心 pill）→ 补剂徽章（独立一行，永不挤压/裁切）→ 训练部位 */
+.cal-cell .cell-d { font-size: 13px; font-weight: 800; font-family: var(--font-num); line-height: 1.2; border-radius: 7px; padding: 0 5px; }
+.cal-cell.today .cell-d { background: var(--accent); color: #fff; }
+.cal-cell .cell-badges { display: flex; align-items: center; justify-content: center; gap: 2px; width: 100%; min-height: 15px; flex: none; }
+.cal-cell .cell-part { font-size: 9px; font-weight: 700; line-height: 1.2; text-align: center; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.cell-badges .bdg { display: inline-flex; align-items: center; justify-content: center; font-size: 11px; line-height: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1px 2px; }
 .cal-sum { margin-top: 12px; font-size: var(--fs-sm); color: var(--ink-3); font-weight: 600; }
 .cal-sum b { font-family: var(--font-num); color: var(--ink); }
 .cal-legend { display: flex; gap: 8px; margin-top: 10px; font-size: var(--fs-sm); color: var(--ink-3); flex-wrap: wrap; }
