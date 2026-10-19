@@ -3502,8 +3502,9 @@
   let curPage = "overview";
   let _initialized = false; // 标记是否已完成首次全量渲染
   let _navDirHint = null;   // 翻页方向提示："next"(左滑前进) / "prev"(右滑后退)，供 navigate 选动画
-  // 滑动切页顺序：底边栏 6 模块在前，日历/训练/设置收在尾部（仍可从顶栏菜单进）
-  const SWIPE_ORDER = ["overview", "weight", "water", "nutrition", "punch", "finance", "calendar", "fitness", "settings"];
+  // 滑动切页顺序 = 底边栏 6 模块（总览…财务）；日历/训练/设置不参与滑动，从菜单进。
+  // 滑到序列「尽头」再继续同向滑 → 召唤侧边菜单（总览：右滑；财务：左滑），反方向滑收回。
+  const SWIPE_ORDER = ["overview", "weight", "water", "nutrition", "punch", "finance"];
   const _renderMap = {
     overview: renderOverview, calendar: renderCalendar, weight: renderWeight,
     nutrition: renderNutrition, fitness: renderFitness, finance: renderFinance,
@@ -3594,9 +3595,13 @@
     const busy = () => $("#overlay").classList.contains("on") || $("#backdrop").classList.contains("on");
     const start = (x, y, target) => {
       if (busy() || blocked(target)) return null;
+      const i = SWIPE_ORDER.indexOf(curPage);
+      const atStart = i === 0, atEnd = i === SWIPE_ORDER.length - 1;
       return {
         x0: x, y0: y, dx: 0, axis: null, page: document.getElementById("page-" + curPage), blocked: false,
-        mayDrawer: drawerOffcanvas() && curPage === SWIPE_ORDER[0] // 最左页 + 抽屉屏外 → 右滑改为拉出菜单
+        // 划到滑动序列尽头（总览/财务）且抽屉屏外 → 继续同向滑改为拉出菜单
+        mayDrawer: drawerOffcanvas() && (atStart || atEnd),
+        drawerDir: atEnd ? -1 : 1 // 总览(头)：右滑(dx>0) 拉菜单；财务(尾)：左滑(dx<0) 拉菜单
       };
     };
     const move = (sw, x, y) => {
@@ -3607,7 +3612,7 @@
       }
       if (sw.axis !== "x") return false;
       sw.dx = dx;
-      if (sw.mayDrawer && dx > 0) { dragDrawer(-sideW(), dx, 0); sw.drawer = true; return true; } // 最左页右滑：拉菜单
+      if (sw.mayDrawer && sw.drawerDir * dx > 0) { dragDrawer(-sideW(), Math.abs(dx), 0); sw.drawer = true; return true; } // 划过头：拉菜单（跟手=滑动距离）
       if (sw.page) sw.page.style.transform = `translateX(${(dx * 0.35).toFixed(1)}px)`;
       return true;
     };
@@ -3648,7 +3653,7 @@
     try {
       if (!localStorage.getItem("tlr_swipe_hint")) {
         localStorage.setItem("tlr_swipe_hint", "1");
-        setTimeout(() => toast("💡 左右滑动切换页面，最左页右滑呼出菜单"), 900);
+        setTimeout(() => toast("💡 左右滑动切换页面，滑到头再滑呼出菜单"), 900);
       }
     } catch (e) {}
   }
