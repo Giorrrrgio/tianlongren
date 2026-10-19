@@ -209,6 +209,12 @@ body {
 .content { padding: 24px 26px 110px; max-width: 1320px; }
 .page { display: none; }
 .page.active { display: block; animation: slideInRight .3s cubic-bezier(.16,1,.3,1); }
+/* 滑动切页：右滑后退时从左侧进入（左滑前进沿用默认 slideInRight） */
+.page.active.swipe-prev { animation-name: slideInLeft; }
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-28px) translateY(4px); }
+  to { opacity: 1; transform: translateX(0) translateY(0); }
+}
 @keyframes slideInRight {
   from { opacity: 0; transform: translateX(24px) translateY(4px); }
   to { opacity: 1; transform: translateX(0) translateY(0); }
@@ -538,23 +544,37 @@ textarea { width: 100%; min-height: 80px; resize: vertical; font-family: inherit
 .row-meta { font-size: var(--fs-sm); color: var(--ink-3); margin-top: 2px; }
 
 /* ========== 训练日历 ========== */
-.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.cal-nav { width: 30px; height: 30px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-2); cursor: pointer; color: var(--ink-2); }
-.cal-title { font-weight: 800; }
+.cal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.cal-navs { display: flex; align-items: center; gap: 10px; }
+.cal-nav { width: 30px; height: 30px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-2); cursor: pointer; color: var(--ink-2); font-size: 13px; }
+.cal-nav:hover { border-color: var(--accent); color: var(--accent); }
+.cal-title { font-weight: 800; font-size: var(--fs-md); min-width: 96px; text-align: center; }
 .cal-week { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: var(--fs-sm); color: var(--ink-3); font-weight: 700; margin-bottom: 6px; }
+.cal-week span:nth-child(6) { color: #f59e0b; }
+.cal-week span:nth-child(7) { color: #f43f5e; }
 .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
 .cal-cell {
-  aspect-ratio: 1; border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--border);
-  display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;
-  cursor: pointer; position: relative; transition: transform .12s, box-shadow .12s;
+  aspect-ratio: 1; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border);
+  display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 2px;
+  padding: 5px 4px 4px; cursor: pointer; position: relative; overflow: hidden;
+  transition: transform .12s, box-shadow .12s;
 }
 .cal-cell:hover { transform: translateY(-2px); box-shadow: var(--sh-sm); }
 .cal-cell.today { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .cal-cell.trained { background: var(--green-soft); color: var(--green-ink); border-color: var(--green-soft); }
 .cal-cell.rest { background: var(--blue-soft); color: var(--blue-ink); border-color: var(--blue-soft); }
-.cal-cell .cell-part { font-size: 9px; font-weight: 700; }
-.cell-badges { position: absolute; top: 4px; right: 4px; display: flex; gap: 2px; font-size: 9px; }
-.cal-legend { display: flex; gap: 14px; margin-top: 14px; font-size: var(--fs-sm); color: var(--ink-3); flex-wrap: wrap; }
+/* 单元格：第一行「日期 + 肌酸/鱼油徽章」并排（都在文档流里，永远不会盖住日期），第二行训练部位 */
+.cal-cell .cell-top { display: flex; align-items: center; justify-content: space-between; gap: 2px; width: 100%; }
+.cal-cell .cell-d { font-size: 13px; font-weight: 800; font-family: var(--font-num); line-height: 1.15; }
+.cal-cell.today .cell-d { color: var(--accent); }
+.cal-cell .cell-part { font-size: 9px; font-weight: 700; line-height: 1.15; text-align: center; opacity: .78; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cell-badges { display: inline-flex; gap: 1px; font-size: 11px; line-height: 1; flex: none; }
+.bdg { display: inline-flex; align-items: center; justify-content: center; font-size: 11px; line-height: 1; }
+.cal-sum { margin-top: 12px; font-size: var(--fs-sm); color: var(--ink-3); font-weight: 600; }
+.cal-sum b { font-family: var(--font-num); color: var(--ink); }
+.cal-legend { display: flex; gap: 8px; margin-top: 10px; font-size: var(--fs-sm); color: var(--ink-3); flex-wrap: wrap; }
+.cal-legend .lg { display: inline-flex; align-items: center; gap: 5px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-full); padding: 3px 10px; font-weight: 600; }
+.cal-legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 
 /* ========== 弹窗 ========== */
 .overlay { position: fixed; inset: 0; background: rgba(8,9,12,.55); z-index: 200; display: none; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(2px); }
@@ -595,9 +615,7 @@ textarea { width: 100%; min-height: 80px; resize: vertical; font-family: inherit
 
 .ic { font-size: 1.05em; line-height: 1; vertical-align: -0.15em; flex: none; display: inline-block; }
 .ic-lg { width: 22px; height: 22px; }
-.bdg { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 6px; }
-.bdg-cr { background: var(--violet-soft); color: var(--violet-ink); }
-.bdg-fo { background: var(--blue-soft); color: var(--blue-ink); }
+
 .lg { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-sm); }
 .meal-group-title .ic { margin-right: 6px; }
 .drink .ic { color: var(--blue); margin-right: 5px; }
