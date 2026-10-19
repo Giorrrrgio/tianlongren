@@ -3526,7 +3526,7 @@
   }
 
   /* ============ 左右滑动切页（触屏 + 桌面鼠标拖拽） ============ */
-  const SWIPE_MIN = 60;  // 触发翻页的最小横向距离（px）
+  const SWIPE_MIN = 60;  // 触发翻页/抽屉的最小横向距离（px）
   const SWIPE_LOCK = 10; // 方向锁定阈值（px）
   let _sw = null;        // 触屏手势状态
   function swipeTarget(dir) { // dir: 1=下一张（左滑），-1=上一张（右滑）
@@ -3542,6 +3542,50 @@
     _navDirHint = null;
     window.scrollTo(0, 0); // 翻页后回到顶部（和原生翻页体验一致）
   }
+
+  /* ============ 抽屉菜单手势：最左页右滑拉出，打开后横扫收回（全程跟手） ============ */
+  function sideW() { const sb = $("#sidebar"); return (sb && sb.offsetWidth) || 240; }
+  function drawerOffcanvas() { // 抽屉处于屏外（手机端关闭态）才参与手势；桌面端常驻不拦普通滑动
+    const sb = $("#sidebar");
+    return !!sb && sb.getBoundingClientRect().right <= 0;
+  }
+  let _drawerTimer = null;
+  function dragDrawer(base, dx, maxRight) { // 跟手：base=起始位移，dx=手指位移，maxRight=右边界
+    const w = sideW(), x = Math.max(-w, Math.min(maxRight, base + dx));
+    const sb = $("#sidebar"), bd = $("#backdrop");
+    if (sb) sb.style.transform = `translateX(${x.toFixed(1)}px)`;
+    if (bd) {
+      bd.classList.add("on");
+      bd.style.opacity = Math.max(0, Math.min(1, (x + w) / w)).toFixed(2);
+    }
+  }
+  function clearDrawerInline() { // 清掉手势内联样式交回 CSS class（无过渡跳变，发生在屏外不可见）
+    const sb = $("#sidebar");
+    if (sb) {
+      sb.style.transition = "none"; sb.style.transform = ""; sb.style.opacity = "";
+      void sb.offsetWidth; // 强制回流，让「无过渡」先生效再恢复
+      sb.style.transition = "";
+    }
+    const bd = $("#backdrop"); if (bd) bd.style.opacity = "";
+  }
+  function snapDrawer(open, exitRight) { // 松手吸附：开→停在全开；关→滑出（右滑=右出并淡出，左滑=左出）
+    const sb = $("#sidebar"), bd = $("#backdrop");
+    if (!sb || !bd) return;
+    if (_drawerTimer) { clearTimeout(_drawerTimer); _drawerTimer = null; }
+    const w = sideW();
+    sb.style.transition = "transform .25s ease";
+    if (open) {
+      sb.style.transform = "translateX(0px)"; sb.style.opacity = "";
+      sb.classList.add("open"); bd.classList.add("on"); bd.style.opacity = "";
+      _drawerTimer = setTimeout(() => { _drawerTimer = null; clearDrawerInline(); }, 280);
+    } else {
+      sb.style.transform = `translateX(${(exitRight ? w : -w)}px)`;
+      if (exitRight) sb.style.opacity = "0"; // 右出同步淡出，避免「推出去又闪回」的观感断裂
+      sb.classList.remove("open"); bd.classList.remove("on"); bd.style.opacity = "";
+      _drawerTimer = setTimeout(() => { _drawerTimer = null; clearDrawerInline(); }, 280);
+    }
+  }
+
   function bindSwipe() {
     const main = $(".main");
     if (!main) return;
@@ -3550,7 +3594,10 @@
     const busy = () => $("#overlay").classList.contains("on") || $("#backdrop").classList.contains("on");
     const start = (x, y, target) => {
       if (busy() || blocked(target)) return null;
-      return { x0: x, y0: y, dx: 0, axis: null, page: document.getElementById("page-" + curPage), blocked: false };
+      return {
+        x0: x, y0: y, dx: 0, axis: null, page: document.getElementById("page-" + curPage), blocked: false,
+        mayDrawer: drawerOffcanvas() && curPage === SWIPE_ORDER[0] // 最左页 + 抽屉屏外 → 右滑改为拉出菜单
+      };
     };
     const move = (sw, x, y) => {
       const dx = x - sw.x0, dy = y - sw.y0;
@@ -3560,11 +3607,13 @@
       }
       if (sw.axis !== "x") return false;
       sw.dx = dx;
+      if (sw.mayDrawer && dx > 0) { dragDrawer(-sideW(), dx, 0); sw.drawer = true; return true; } // 最左页右滑：拉菜单
       if (sw.page) sw.page.style.transform = `translateX(${(dx * 0.35).toFixed(1)}px)`;
       return true;
     };
     const finish = (sw) => {
       if (!sw) return;
+      if (sw.drawer) { snapDrawer(Math.abs(sw.dx) >= SWIPE_MIN); return; }
       if (sw.page) sw.page.style.transform = "";
       if (sw.axis === "x" && Math.abs(sw.dx) >= SWIPE_MIN) doSwipe(sw.dx);
     };
@@ -3599,9 +3648,47 @@
     try {
       if (!localStorage.getItem("tlr_swipe_hint")) {
         localStorage.setItem("tlr_swipe_hint", "1");
-        setTimeout(() => toast("💡 左右滑动可切换页面"), 900);
+        setTimeout(() => toast("💡 左右滑动切换页面，最左页右滑呼出菜单"), 900);
       }
     } catch (e) {}
+  }
+
+  /* ---- 抽屉打开后：遮罩上左右横扫均可收回（跟手，松手吸附；右滑右出，左滑左出） ---- */
+  function bindDrawerSwipe() {
+    const bd = $("#backdrop");
+    if (!bd) return;
+    let g = null, mouse = null;
+    const startG = (x, y) => ({ x0: x, y0: y, dx: 0, axis: null });
+    const moveG = (o, x, y) => {
+      const dx = x - o.x0, dy = y - o.y0;
+      if (!o.axis) {
+        if (Math.abs(dx) < SWIPE_LOCK && Math.abs(dy) < SWIPE_LOCK) return false;
+        o.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+      }
+      if (o.axis !== "x") return false;
+      o.dx = dx;
+      dragDrawer(0, dx, sideW()); // 打开态：左右横扫都跟手
+      return true;
+    };
+    const endG = (o) => {
+      if (!o || o.axis !== "x") return;
+      snapDrawer(Math.abs(o.dx) < SWIPE_MIN, o.dx > 0); // 没过阈值 → 回弹到开着
+    };
+    bd.addEventListener("touchstart", (e) => { if (e.touches.length === 1) g = startG(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+    bd.addEventListener("touchmove", (e) => {
+      if (!g || e.touches.length !== 1) return;
+      if (moveG(g, e.touches[0].clientX, e.touches[0].clientY)) e.preventDefault();
+    }, { passive: false });
+    const touchEnd = () => { endG(g); g = null; };
+    bd.addEventListener("touchend", touchEnd, { passive: true });
+    bd.addEventListener("touchcancel", touchEnd, { passive: true });
+    // 桌面窄屏：遮罩上鼠标左右拖拽同样可收回
+    bd.addEventListener("mousedown", (e) => { if (e.button === 0) mouse = startG(e.clientX, e.clientY); });
+    window.addEventListener("mousemove", (e) => {
+      if (!mouse) return;
+      if (moveG(mouse, e.clientX, e.clientY)) e.preventDefault();
+    });
+    window.addEventListener("mouseup", () => { endG(mouse); mouse = null; });
   }
   function openDrawer() { $("#sidebar").classList.add("open"); $("#backdrop").classList.add("on"); }
   function closeDrawer() { $("#sidebar").classList.remove("open"); $("#backdrop").classList.remove("on"); }
@@ -3618,7 +3705,8 @@
 
   /* ============ 事件 & 启动 ============ */
   function bind() {
-    bindSwipe(); // 左右滑动切页（触屏 + 桌面鼠标拖拽）
+    bindSwipe(); // 左右滑动切页（触屏 + 桌面鼠标拖拽）+ 最左页右滑拉出抽屉
+    bindDrawerSwipe(); // 抽屉打开后：遮罩上横扫收回
     $$(".nav-item").forEach((b) => (b.onclick = () => navigate(b.dataset.page)));
     // 底部快捷栏：普通项直接跳页，「菜单」项复用抽屉（桌面端 tabbar 隐藏，绑了也不影响）
     $$(".tab-item").forEach((b) => (b.onclick = () => {
