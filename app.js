@@ -416,6 +416,94 @@
   // ---- 存档读取 / 兼容性层 ----
   // 深合并：以 demo() 为骨架，用旧档覆盖；缺的字段自动补齐，数组直接替换。
   function isObj(x) { return x && typeof x === "object" && !Array.isArray(x); }
+
+  /* 存档消毒：任何来源（本地 localStorage / 导入 / 云端拉取）的存档都过一遍。
+     手改过的、旧版本的、导入错文件的存档里容器类型可能不对
+     （如某天 snack 槽位是字符串 "x"、water 天数被写成数组……）。
+     这类脏数据会在启动渲染期直接抛异常（intakeOf 的 forEach），
+     用户看到的就是整个 App 白屏打不开。这里把容器类型全部纠正，
+     原则：容器坏了就重置为空，数值坏了就当 0，绝不抛异常。 */
+  function sanitizeArchive(m) {
+    const asArr = (v, keepObj) => (Array.isArray(v) ? v.filter((x) => (keepObj ? isObj(x) : true)) : []);
+    const asObj = (v) => (isObj(v) ? v : {});
+    const asNum = (v) => { const x = +v; return isFinite(x) ? x : 0; };
+    // nutrition
+    m.nutrition = asObj(m.nutrition);
+    m.nutrition.daily = asObj(m.nutrition.daily);
+    for (const ds in m.nutrition.daily) {
+      const day = asObj(m.nutrition.daily[ds]);
+      for (const k of ["breakfast", "lunch", "dinner", "snack"]) {
+        // 餐食条目：已存在的数值字段强转（"abc"/NaN → 0），否则 renderNutrition 会渲染出 NaN。
+        // 只动「已存在且非 null」的字段：不给老记录补新键，保证存档往返逐字节不变。
+        day[k] = asArr(day[k], true).map((it) => {
+          for (const f of ["calories", "protein", "fat", "carbs", "cholesterol", "purine"]) {
+            if (it[f] != null) it[f] = asNum(it[f]);
+          }
+          if (typeof it.name !== "string") it.name = String(it.name == null ? "" : it.name);
+          return it;
+        });
+      }
+      m.nutrition.daily[ds] = day;
+    }
+    // 体重记录：率值/重量强转（"x" → 0），防脂肪量/肌肉量算出 NaN 上屏（同样不补新键）
+    m.nutrition.weight = asArr(m.nutrition.weight, true).map((w) => {
+      for (const f of ["weight", "fatRate", "muscleRate", "waterMass"]) {
+        if (w[f] != null) w[f] = asNum(w[f]);
+      }
+      return w;
+    });
+    m.nutrition.water = asObj(m.nutrition.water);
+    for (const ds in m.nutrition.water) {
+      const w = asObj(m.nutrition.water[ds]);
+      w.water = asNum(w.water); w.caffeine = asNum(w.caffeine);
+      w.chlorogenic = asNum(w.chlorogenic); w.theophylline = asNum(w.theophylline);
+      w.drinks = asArr(w.drinks, true).filter((x) => typeof x.name === "string");
+      m.nutrition.water[ds] = w;
+    }
+    m.nutrition.drinks = asArr(m.nutrition.drinks, true);
+    m.nutrition.trendDays = asNum(m.nutrition.trendDays) || 30;
+    // finance
+    m.finance = asObj(m.finance);
+    m.finance.txns = asArr(m.finance.txns, true);
+    m.finance.bals = asObj(m.finance.bals);
+    for (const k in m.finance.bals) m.finance.bals[k] = asNum(m.finance.bals[k]);
+    for (const k of ["invs", "debts", "ecats", "icats"]) m.finance[k] = asArr(m.finance[k], false);
+    for (const k of ["msets", "hfund", "sfund", "acctClass"]) m.finance[k] = asObj(m.finance[k]);
+    for (const mk in m.finance.msets) m.finance.msets[mk] = asObj(m.finance.msets[mk]);
+    // punch：times 是 {amIn,amOut,pmIn,pmOut} 字典
+    m.punch = asObj(m.punch);
+    for (const ds in m.punch) {
+      const p = asObj(m.punch[ds]);
+      p.times = asObj(p.times);
+      p.ot = asNum(p.ot);
+      m.punch[ds] = p;
+    }
+    // fitness
+    m.fitness = asObj(m.fitness);
+    m.fitness.calendar = asObj(m.fitness.calendar);
+    for (const ds in m.fitness.calendar) {
+      const c = asObj(m.fitness.calendar[ds]);
+      c.parts = asArr(c.parts, false).map(String);
+      c.creatine = !!c.creatine;
+      c.fishOil = !!c.fishOil;
+      m.fitness.calendar[ds] = c;
+    }
+    m.fitness.actions = asObj(m.fitness.actions);
+    for (const part in m.fitness.actions) m.fitness.actions[part] = asArr(m.fitness.actions[part], true);
+    // profile：body 是字典（性别/年龄/身高…），todos 是数组
+    m.profile = asObj(m.profile);
+    m.profile.todos = asArr(m.profile.todos, false);
+    m.profile.body = asObj(m.profile.body);
+    // body 数值字段强转：age/height/weight 坏了会让 TDEE/碳循环算出 NaN 上屏
+    for (const f of ["age", "height", "weight", "activity", "gap"]) {
+      if (m.profile.body[f] != null) m.profile.body[f] = asNum(m.profile.body[f]);
+    }
+    m.profile.level = asObj(m.profile.level);
+    // frivolous
+    m.frivolous = asObj(m.frivolous);
+    m.frivolous.items = asArr(m.frivolous.items, true);
+    return m;
+  }
   function mergeDefaults(base, over) {
     if (!isObj(base) || !isObj(over)) return over === undefined ? base : over;
     const out = {};
@@ -430,6 +518,7 @@
   function normalize(d) {
     if (!isObj(d) || !isObj(d.profile)) return null;
     const m = mergeDefaults(demo(), d);
+    sanitizeArchive(m); // 容器类型消毒：脏存档不再让启动渲染期直接抛异常（白屏）
     m.__v = SEED_VERSION;
     if (!m.profile.todos) m.profile.todos = [];
     if (!m.finance) m.finance = {};
@@ -995,8 +1084,8 @@
     const wArr = (D.nutrition.weight || []).slice().sort((a, b) => a.date.localeCompare(b.date));
     const lw = wArr.length ? wArr[wArr.length - 1] : null;
     const wPrev = wArr.length > 1 ? wArr[wArr.length - 2] : null;
-    const fatMass = (r) => (r && r.weight && r.fatRate != null) ? +(r.weight * r.fatRate / 100).toFixed(1) : null;
-    const musMass = (r) => (r && r.weight && r.muscleRate != null) ? +(r.weight * r.muscleRate / 100).toFixed(1) : null;
+    const fatMass = (r) => { const v = (r && r.weight && r.fatRate != null) ? +(r.weight * r.fatRate / 100).toFixed(1) : null; return v != null && isFinite(v) ? v : null; };
+    const musMass = (r) => { const v = (r && r.weight && r.muscleRate != null) ? +(r.weight * r.muscleRate / 100).toFixed(1) : null; return v != null && isFinite(v) ? v : null; };
     const ud = (c, p) => {
       if (c == null || p == null) return `<span class="card-sub">—</span>`;
       const d = +(c - p).toFixed(1);
@@ -1256,14 +1345,16 @@
     };
     const mealHTML = MEALS.map((m) => {
       const list = dayMeals(t)[m.k] || [];
-      const cal = list.reduce((s, i) => s + (+i.calories || 0), 0);
+      // 老记录/脏记录可能缺字段：全部 +x||0 兜底，Math.round 不再吐出 NaN
+      const num = (it, f) => Math.round(+it[f] || 0);
+      const cal = list.reduce((s, i) => s + num(i, "calories"), 0);
       const items = list.map((it) => `
         <div class="meal-item">
           <div class="mi-main">
             <div class="mi-name">${esc(it.name)}</div>
-            <div class="mi-macros"><span style="color:#64748b">🔥</span> ${Math.round(it.calories)} kcal · <span style="color:#64748b">🍚</span> ${Math.round(it.carbs)}g · <span style="color:#64748b">🥩</span> ${Math.round(it.protein)}g · <span style="color:#64748b">🧈</span> ${Math.round(it.fat)}g · <span style="color:#64748b">🥚</span> ${Math.round(it.cholesterol || 0)}mg · <span style="color:#64748b">🦐</span> ${Math.round(it.purine || 0)}mg</div>
+            <div class="mi-macros"><span style="color:#64748b">🔥</span> ${num(it, "calories")} kcal · <span style="color:#64748b">🍚</span> ${num(it, "carbs")}g · <span style="color:#64748b">🥩</span> ${num(it, "protein")}g · <span style="color:#64748b">🧈</span> ${num(it, "fat")}g · <span style="color:#64748b">🥚</span> ${num(it, "cholesterol")}mg · <span style="color:#64748b">🦐</span> ${num(it, "purine")}mg</div>
           </div>
-          <div class="mi-cal">${Math.round(it.calories)}</div>
+          <div class="mi-cal">${num(it, "calories")}</div>
           <button class="mi-del" data-editmeal="${m.k}:${it.id}" title="编辑">编</button>
           <button class="mi-del" data-delmeal="${m.k}:${it.id}" title="删除" style="margin-left:4px;">×</button>
         </div>`).join("");
@@ -1528,7 +1619,7 @@
         let cand = cut >= 0 ? first.slice(0, cut) : first;
         cand = cand.replace(/[：:=]/g, " ").replace(/[，,。．！!？?\s]+$/, "")
                    .replace(/(?:约|大约|估计|估量|approx).*$/i, "") // 丢弃「约」及其后的附带说明
-                   .replace(/^(?:这是一道|这是|我为你|帮你|根据|以下|分析|约|大约|估计|一份|菜品|食物|名称|菜名|一道|做法|步骤)[：:\s]*/i, "")
+                   .replace(/^(?:这是一道|这是|我为你|帮你|根据|以下|分析|约|大约|估计|我?(?:吃|喝)了?|一份|菜品|食物|名称|菜名|一道|做法|步骤)[：:\s]*/i, "")
                    .replace(/(的|了|哦|呢|呀|～|~)\s*$/, "").trim();
         if (cand && !/分析|如下|营养|成分|根据|以下|包含|估算|计算|热量|能量|碳水|蛋白质|脂肪|胆固醇|嘌呤|提供|食材|calories|protein|fat|carbs/i.test(cand) && cand.length >= 2 && cand.length <= 18) name = cand;
       }
@@ -1537,7 +1628,47 @@
     if (/^(?:总\s*热量|热量|能量|碳水(?:化合物)?|蛋白质|脂肪|胆固醇|嘌呤|calories?|protein|fat|carbs?|cholesterol|purine)[\s：(（[\d]+$/i.test(name)) {
       name = "";
     }
+    // 用户规则：文本里没写分量的菜名，默认补「1份」量词。
+    // 已预提取到「菜名+分量」（如蛋白粉30g）或名称自带分量数字/中文数量词的不动，
+    // 避免把 "蛋白粉(1份)" 这种带分量的也补一刀。
+    if (name && !extractedDish) {
+      const QTY_IN_NAME = /\d/.test(name) ||
+        /[零一二两三四五六七八九十半]\s*(?:g|克|个|颗|片|块|碗|盒|根|条|只|枚|份|串|把|杯|袋|罐|瓶|勺|张|瓣|粒|尾|笼|碟|盘|两|段|节|丁|截|房|锅|屉|听|桶|壶|扎|支|口)/i.test(name);
+      if (!QTY_IN_NAME) name = name.trim() + "(1份)";
+    }
     return { name, cal, c, p, f, ch, pu };
+  }
+
+  /* 裸菜名切段：把前面各模式已匹配掉的区间抹掉后，按分隔符切残余文本，
+     只保留「干净的裸菜名」（无数字/括号/营养关键词/语气词），供补默认 (1份)。
+     宁可漏（掉进 parseNutritionText 兜底）也不要误收句子残渣。 */
+  function bareDishSegments(text, eaten) {
+    if (!text) return [];
+    let rest = text;
+    const sorted = (eaten || []).slice().sort((a, b) => b[0] - a[0]); // 从后往前抹，防区间位移
+    for (const r of sorted) {
+      const s = r[0], e = r[1];
+      if (typeof s !== "number" || typeof e !== "number" || e <= s || s < 0 || e > rest.length) continue;
+      rest = rest.slice(0, s) + " ".repeat(e - s) + rest.slice(e);
+    }
+    const BAD = /总热量|热量|能量|碳水|蛋白质|脂肪|胆固醇|嘌呤|营养|成分|calories|protein|fat|carbs|cholesterol|purine|备注|说明|测算|估算|参考|常规|单人|根据|以下|如下|分析|包含|提供|食材|做法|步骤|每|总计|合计|小计|一共|总共|千卡|大卡|卡路里/i;
+    const STOP = /^(?:和|跟|与|及|外加|还有|另外|加上|加了|吃|吃了|喝|喝了|内容|结果|报告|备注|说明|例|例如|比如|约|大约|一共|总共|合计|小计|搭配|配|配菜|主食|菜品|食物|餐|一顿|早餐|午餐|晚餐|加餐|夜宵|等|等等|有点|很|太|超|特|挺|贼|非常|超级|好吃|好喝|不错|and|or|with|the|a|an)$/i;
+    const out = [];
+    // 分隔符含 ｜|：用户历史存档的菜名就是「米饭｜鸡腿」连写的，回粘时也必须能拆开
+    for (let seg of rest.split(/[,，、;；/／|｜\s\n\r]+/)) {
+      seg = seg.trim()
+               .replace(/^[\s!！?？。.．·—\-~～:：、，]+/, "").replace(/[\s!！?？。.．·—\-~～:：、，]+$/, "")
+               .replace(/[等啦呀哦呢衲~～]+$/, "");
+      if (seg.length < 2 || seg.length > 15) continue;
+      if (/[\d]/.test(seg)) continue;                      // 残留数字=前几个模式的残渣
+      if (/[（()【】\[\]{}「」『』]/.test(seg)) continue;     // 括号注释残渣
+      if (/[了过]/.test(seg)) continue;                     // 句子语气词，不是菜名
+      if (BAD.test(seg)) continue;                          // 营养/备注/汇总关键词
+      if (!/[\u4e00-\u9fffA-Za-z]/.test(seg)) continue;
+      if (STOP.test(seg)) continue;
+      out.push(seg);
+    }
+    return out;
   }
 
   /* ============ 多菜品清单解析（逗号/顿号分隔的多个食物） ============ */
@@ -1645,6 +1776,12 @@
     foodText = foodText.replace(/\+/g, ",").replace(/[，、]/g, ",");
     // 剥离「名称：」前缀
     foodText = foodText.replace(/^名称\s*[：:]\s*/i, "");
+    // ① 餐别前缀：「早餐：」「午餐:」等——前缀带着冒号，不剥掉会粘在第一个菜名上
+    foodText = foodText.replace(/^\s*(?:早餐|午餐|晚餐|加餐|夜宵|早点|早饭|午饭|晚饭|下午茶)\s*[：:]\s*/u, "");
+    // ② 句首口语动词：「吃了/喝了/吃/喝」。
+    //    不剥的话 PAT_MAIN 会把「吃了」当菜名（"吃了一份红烧肉50g" → 垃圾菜品「吃了(1份)」）。
+    //    仅限句首一次：句中出现的动词交给 模式4 的 了/过 过滤兜底。
+    foodText = foodText.replace(/^\s*(?:我|今天|现在|刚刚|才)?\s*(?:吃|喝|咬)了?/u, "").trim();
 
     /* ========== 预处理：提取"菜名（qty+desc）"格式，防止括号内碎片被误匹配 ========== */
     // 将 "芝士牛乳奶油包（70g面粉自制，165g）" → "芝士牛乳奶油包165g"
@@ -1653,7 +1790,7 @@
     foodText = foodText.replace(/([\u4e00-\u9fff]{2,})[（\(]([^)）]{1,40})[）\)]/g, (match, name, content) => {
       // 从括号内容提取所有数量+单位，排除"用油/油/配料"相关的
       const qtyMatches = [];
-      const qtyRe = /(\d+(?:\.\d+)?)\s*(克|g|个|颗|片|块|碗|盒|根|条|只|枚|份|串|把|杯|袋|罐|瓶|勺|张|瓣|粒|尾|笼|碟|盘|两)/g;
+      const qtyRe = /(\d+(?:\.\d+)?)\s*(克|g|个|颗|片|块|碗|盒|根|条|只|枚|份|串|把|杯|袋|罐|瓶|勺|张|瓣|粒|尾|笼|碟|盘|两|毫升|ml)/g;
       let qm;
       while ((qm = qtyRe.exec(content)) !== null) {
         // 检查前面的上下文，排除"用油"、"油"、"配料"等非主料数量
@@ -1690,14 +1827,14 @@
     // 注意：包含足够多的中文量词，避免类似"豆豉排骨3段"的丢失
     // 补充了 房/锅/屉/听/桶/壶/扎/支 —— 缺「房」时「榴莲1房」整条匹配不到，
     // 最终一个菜都拆不出来，会掉进下面的兜底分支（那分支原本还崩）。
-    const REAL_UNIT = "(?:g|克|个|颗|片|块|碗|盒|根|条|只|枚|份|串|把|杯|袋|罐|瓶|勺|张|瓣|粒|尾|笼|碟|盘|两|段|节|丁|块|截|块儿|瓣儿|段儿|条儿|块头|坨|房|锅|屉|听|桶|壶|扎|支)";
+    const REAL_UNIT = "(?:g|克|个|颗|片|块|碗|盒|根|条|只|枚|份|串|把|杯|袋|罐|瓶|勺|张|瓣|粒|尾|笼|碟|盘|两|段|节|丁|块|截|块儿|瓣儿|段儿|条儿|块头|坨|房|锅|屉|听|桶|壶|扎|支|毫升|ml)";
     const VIRT_UNIT = "(?:口|碗|杯|勺|匙)";
     const CNUM = "(?:\\d+(?:\\.\\d+)?|[零一二两三四五六七八九十半]+)";
     // DISH_UNIT：供「模式 2」与下面的中文数量词归一化共用。
     // 之前模式 2 直接引用了 DISH_UNIT 但本函数里从没定义过它（只有
     // parseNutritionText 内部有同名局部变量）→ 一旦走到模式 2 就抛
     // ReferenceError，整个识别静默失败。这里补上正式定义。
-    const DISH_UNIT = "(?:g|克|个|颗|片|块|碗|盒|根|条|只|枚|份|串|把|杯|袋|罐|瓶|勺|张|瓣|粒|尾|笼|碟|盘|两|段|节|丁|截|房|锅|屉|听|桶|壶|扎|支|口)";
+    const DISH_UNIT = "(?:g|克|个|颗|片|块|碗|盒|根|条|只|枚|份|串|把|杯|袋|罐|瓶|勺|张|瓣|粒|尾|笼|碟|盘|两|段|节|丁|截|房|锅|屉|听|桶|壶|扎|支|口|毫升|ml)";
 
     /* ===== 预处理：把中文数量词归一成阿拉伯数字 =====
      * PAT_MAIN 的数量捕获组只认阿拉伯数字，但真实输入大量使用中文数量词
@@ -1715,12 +1852,22 @@
     foodText = foodText.replace(new RegExp("([零一二两三四五六七八九十半]{1,3})(?=" + DISH_UNIT + ")", "g"), (mm) => cnToArabic(mm));
 
     // 数量词前缀：从名称中剥离（"一口莲藕" → "莲藕"，"半碗饭" → "饭"）
+    // ⚠️ 只能剥「数字/中文数 + 量词」形态（"1份红烧肉" 归一后 PAT_MAIN 会把
+    // "份红烧肉" 整段当名称），且量词前一个字必须是数字。
+    // 早年无条件剥前缀，把「手撕鸡」剥成「撕鸡」、「口水鸡」剥成「水鸡」、
+    // 「把子肉」剥成「子肉」——这些量词汉字本身就是常用菜名首字。
     const QTY_PREFIX_RE = /^(?:一?口|半?碗|一?杯|一?勺|少量|少许|一?小?撮|一?点|一?筷|一?手|一?捏|一?片|一?块|一?根|一?只|一?个|一?颗|一?粒|一?瓣|一?张|一?份|一?把|一?串|一?袋|一?罐|一?瓶|一?盒|一?盘|一?碟|一?笼|一?尾|一?条|一两|半两)/;
+    // 名称起始位置前一个字是不是数字/中文数：是才允许剥量词前缀（防误伤菜名首字）
+    const qtyPrefixGuarded = (matchIdx) => {
+      const ch = foodText.charAt(Math.max(0, matchIdx - 1));
+      return /[\d零一二两三四五六七八九十半]/.test(ch);
+    };
     // 尾部数字清理（虚拟单位匹配后："莲藕汤两" → "莲藕汤"）
     const TRAIL_NUM_RE = /[一二两三四五六七八九十半\d\.]+$/;
 
     const meals = [];
     const seenNames = new Set();
+    const eaten = []; // 各模式已吃掉的文本区间 [start, end)，供模式4找「没写分量的裸菜名」
 
     // ---- 主正则：名称 + [×N] + 数量 + 单位 ----
     // 支持两种格式：
@@ -1740,15 +1887,16 @@
 
     let m1;
     while ((m1 = PAT_MAIN.exec(foodText)) !== null) {
+      eaten.push([m1.index, m1.index + m1[0].length]);
       let rawName = (m1[1] || "").trim();
       const qtyA = m1[2], unitA = m1[3];   // 格式A: ×N
       const qtyB = m1[4], unitB = m1[5];   // 格式B: 普通
       let finalQty = parseFloat(qtyA || qtyB || 0);
       const unit = unitA || unitB || "";
 
-      // 剥离名称中的数量词前缀
+      // 剥离名称中的数量词前缀（仅当前一个字是数字时才剥，防「手撕鸡」→「撕鸡」）
       const prefixMatch = rawName.match(QTY_PREFIX_RE);
-      if (prefixMatch && rawName.length > prefixMatch[0].length) {
+      if (prefixMatch && rawName.length > prefixMatch[0].length && qtyPrefixGuarded(m1.index)) {
         rawName = rawName.slice(prefixMatch[0].length).trim();
       }
 
@@ -1780,6 +1928,7 @@
     );
     let mV;
     while ((mV = PAT_VIRT.exec(foodText)) !== null) {
+      eaten.push([mV.index, mV.index + mV[0].length]);
       let rawName = (mV[1] || "").trim();
       let vQtyRaw = mV[2] || "";
       const vUnit = mV[3] || "";
@@ -1794,9 +1943,9 @@
       }
       const vQty = vQtyRaw ? (parseFloat(cnToArabic(vQtyRaw)) || 1) : 1;
 
-      // 剥离数量词前缀
+      // 剥离数量词前缀（同样受数字守卫约束）
       const pm = rawName.match(QTY_PREFIX_RE);
-      if (pm && rawName.length > pm[0].length) rawName = rawName.slice(pm[0].length).trim();
+      if (pm && rawName.length > pm[0].length && qtyPrefixGuarded(mV.index)) rawName = rawName.slice(pm[0].length).trim();
       // 剥离尾部数字（阿拉伯数字残留）
       rawName = rawName.replace(TRAIL_NUM_RE, "").trim();
       if (rawName.length < 2) continue;
@@ -1817,15 +1966,17 @@
 
     // ---- 模式 2（辅模式）：数字 + 单位 + 中文名称 ----
     // 匹配：200克姜母鸭、50g花生、三片西瓜（仅当主正则没匹配到时）
+    // 名称放宽到 1 字：存档里真实存在「1颗糖」这类单字菜，早年要求 ≥2 字会整条丢掉
     if (meals.length === 0) {
-      const PAT_QTY_FIRST = new RegExp("(" + CNUM + ")\\s*(" + DISH_UNIT + ")\\s*([\\u4e00-\\u9fff]{2,}(?:[\\u4e00-\\u9fff\\(\\)\\[\\]·\\-]{0,15}?)?)", "gi");
+      const PAT_QTY_FIRST = new RegExp("(" + CNUM + ")\\s*(" + DISH_UNIT + ")\\s*([\\u4e00-\\u9fff]{1,}(?:[\\u4e00-\\u9fff\\(\\)\\[\\]·\\-]{0,15}?)?)", "gi");
       let m2;
       while ((m2 = PAT_QTY_FIRST.exec(foodText)) !== null) {
+        eaten.push([m2.index, m2.index + m2[0].length]);
         const qtyStr = cnToArabic(m2[1]);
         const unit = m2[2];
         let name = (m2[3] || "").trim();
         name = name.replace(/[，,。．！!？?\s]+$/, "").trim();
-        if (name.length < 2) continue;
+        if (name.length < 1) continue;
         if (/^(?:总热量|热量|能量|碳水(?:化合物)?|蛋白质|脂肪|胆固醇|嘌呤)$/i.test(name)) continue;
         const key = name + qtyStr + unit;
         if (seenNames.has(key)) continue;
@@ -1846,6 +1997,7 @@
       const PAT_SIMPLE = /([\u4e00-\u9fff]{2,}|[A-Za-z]{2,})[\s\(（\[]{0,4}(\d+(?:\.\d+)?)\s*(克|g)\b/gi;
       let m3;
       while ((m3 = PAT_SIMPLE.exec(foodText)) !== null) {
+        eaten.push([m3.index, m3.index + m3[0].length]);
         const dishName = m3[1];
         const qtyStr = m3[2];
         const unit = m3[3];
@@ -1864,10 +2016,30 @@
       }
     }
 
+    // ---- 模式 4：没写分量的裸菜名 → 补默认「1份」----
+    // 例：「包子，豆浆，一颗鸡蛋」→ 包子(1份) + 豆浆(1份) + 一颗鸡蛋(1个)
+    // 不依赖 meals.length===0：前面模式只吃掉「带分量」的，剩下的裸名照样补。
+    for (const rawName of bareDishSegments(foodText, eaten)) {
+      if (meals.some((mm) => mm._rawName === rawName)) continue;
+      const key = rawName + "1份";
+      if (seenNames.has(key)) continue;
+      seenNames.add(key);
+      meals.push({
+        name: rawName + "(1份)",
+        cal: "", c: "", p: "", f: "", ch: "", pu: "",
+        _rawName: rawName,
+        _qty: 1,
+        _unit: "份",
+      });
+    }
+
     // 如果有汇总营养值且有多个菜品，按份量比例分配
     if (meals.length >= 2 && sumCal) {
+      // 单位统一的才按份量比例（100g:200g → 1:2）；克与「份」混排时数量不可比
+      // （100g vs 1份 直接按 _qty 算会分出 594:6 这种失真结果），一律改平均分配。
+      const sameUnit = meals.every((m) => (m._unit || "份") === (meals[0]._unit || "份"));
       const totalQty = meals.reduce((s, m) => s + (m._qty || 0), 0);
-      if (totalQty > 0) {
+      if (sameUnit && totalQty > 0) {
         // 优化：最后一个菜品用「剩余值」，避免累加误差
         // 例如 44.7 分 3 份（1+10+1=12），前两份 3.7+37.3=41.0，最后一份 = 44.7-41.0 = 3.7
         const NUT_FIELDS = ['cal', 'c', 'p', 'f', 'ch', 'pu'];
@@ -1890,6 +2062,18 @@
               const remain = Math.round(((totalVal || 0) - assigned) * 10) / 10;
               m[f] = remain;
             }
+          });
+        });
+      } else {
+        // 单位混排（克与份/个/杯混用）或总份量为 0：数量不可比，平均分配
+        const NUT_FIELDS = ['cal', 'c', 'p', 'f', 'ch', 'pu'];
+        const totalMap = { cal: sumCal, c: sumC, p: sumP, f: sumF, ch: sumCh, pu: sumPu };
+        NUT_FIELDS.forEach((f) => {
+          const totalVal = totalMap[f];
+          if (!totalVal) return;
+          const each = Math.round((totalVal / meals.length) * 10) / 10;
+          meals.forEach((m, i) => {
+            m[f] = i < meals.length - 1 ? each : Math.round((totalVal - each * (meals.length - 1)) * 10) / 10;
           });
         });
       }
@@ -2159,8 +2343,8 @@
     const arr = (D.nutrition.weight || []).slice().sort((a, b) => a.date.localeCompare(b.date));
     const lw = arr.length ? arr[arr.length - 1] : null;
     const prev = arr.length > 1 ? arr[arr.length - 2] : null;
-    const fatMass = (r) => (r && r.weight && r.fatRate != null) ? +(r.weight * r.fatRate / 100).toFixed(1) : null;
-    const musMass = (r) => (r && r.weight && r.muscleRate != null) ? +(r.weight * r.muscleRate / 100).toFixed(1) : null;
+    const fatMass = (r) => { const v = (r && r.weight && r.fatRate != null) ? +(r.weight * r.fatRate / 100).toFixed(1) : null; return v != null && isFinite(v) ? v : null; };
+    const musMass = (r) => { const v = (r && r.weight && r.muscleRate != null) ? +(r.weight * r.muscleRate / 100).toFixed(1) : null; return v != null && isFinite(v) ? v : null; };
     const upDown = (cur, pre) => {
       if (cur == null || pre == null) return `<span class="card-sub">—</span>`;
       const d = +(cur - pre).toFixed(1);
