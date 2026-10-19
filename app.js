@@ -2076,7 +2076,7 @@
         if (e.parts && e.parts.length) { if (e.parts.includes("休息")) { cls += " rest"; part = "休"; } else { cls += " trained"; part = e.parts.join("·"); } }
         if (e.creatine) badges += '<span class="bdg bdg-cr">💊</span>'; if (e.fishOil) badges += '<span class="bdg bdg-fo">🐟</span>';
       }
-      g += `<div class="${cls}" data-date="${ds}"><div class="cell-badges">${badges}</div>${d}<div class="cell-part">${part}</div></div>`;
+      g += `<div class="${cls}" data-date="${ds}"><div class="cell-top"><span class="cell-d">${d}</span>${badges ? `<span class="cell-badges">${badges}</span>` : ""}</div>${part ? `<div class="cell-part">${part}</div>` : ""}</div>`;
     }
     $("#" + gridId).innerHTML = g;
     $$("#" + gridId + " [data-date]").forEach((c) => c.onclick = () => openDayModal(c.dataset.date));
@@ -2117,14 +2117,41 @@
       </div>
 
       <div class="card mt-3">
-        <div class="cal-head"><button class="cal-nav" data-cal="prev">&lt;</button><span class="cal-title" id="calTitleCal"></span><button class="cal-nav" data-cal="next">&gt;</button></div>
+        <div class="cal-head">
+          <div class="cal-navs">
+            <button class="cal-nav" data-cal="prev" aria-label="上个月">&lt;</button>
+            <span class="cal-title" id="calTitleCal"></span>
+            <button class="cal-nav" data-cal="next" aria-label="下个月">&gt;</button>
+          </div>
+          <button class="btn btn-sm btn-ghost" id="calTodayBtn">回到本月</button>
+        </div>
         <div class="cal-week"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
         <div class="cal-grid" id="calGridCal"></div>
-        <div class="cal-legend"><span style="color:#10b981">● 训练</span><span style="color:#3b82f6">● 休息</span><span class="lg"><span style="color:#8b5cf6">💊</span>肌酸</span><span class="lg"><span style="color:#3b82f6">🐟</span>鱼油</span></div>
+        <div class="cal-sum" id="calSum"></div>
+        <div class="cal-legend">
+          <span class="lg"><i class="dot" style="background:#10b981"></i>训练</span>
+          <span class="lg"><i class="dot" style="background:#3b82f6"></i>休息</span>
+          <span class="lg">💊 肌酸</span>
+          <span class="lg">🐟 鱼油</span>
+        </div>
       </div>`;
 
-    drawCalendar("calGridCal", "calTitleCal");
-    $$("#body-calendar [data-cal]").forEach((b) => b.onclick = () => { const d = b.dataset.cal === "prev" ? -1 : 1; calM += d; if (calM < 0) { calM = 11; calY--; } if (calM > 11) { calM = 0; calY++; } drawCalendar("calGridCal", "calTitleCal"); });
+    // 月份切换时同步刷新：标题/网格/本月小结/「回到本月」可见性
+    const paintCal = () => {
+      drawCalendar("calGridCal", "calTitleCal");
+      const prefix = `${calY}-${String(calM + 1).padStart(2, "0")}`;
+      const es = Object.entries(ft.calendar).filter(([k]) => k.startsWith(prefix));
+      const nTrain = es.filter(([, e]) => e.parts && e.parts.length && !e.parts.includes("休息")).length;
+      const nRest = es.filter(([, e]) => e.parts && e.parts.includes("休息")).length;
+      const nCr = es.filter(([, e]) => e.creatine).length;
+      const nFo = es.filter(([, e]) => e.fishOil).length;
+      $("#calSum").innerHTML = `本月训练 <b>${nTrain}</b> 天 · 休息 <b>${nRest}</b> 天 · 💊 <b>${nCr}</b> 天 · 🐟 <b>${nFo}</b> 天`;
+      const now = dateFromStr(effToday);
+      $("#calTodayBtn").style.visibility = (calY === now.getFullYear() && calM === now.getMonth()) ? "hidden" : "visible";
+    };
+    $$("#body-calendar [data-cal]").forEach((b) => b.onclick = () => { const d = b.dataset.cal === "prev" ? -1 : 1; calM += d; if (calM < 0) { calM = 11; calY--; } if (calM > 11) { calM = 0; calY++; } paintCal(); });
+    $("#calTodayBtn").onclick = () => { const n = dateFromStr(effToday); calY = n.getFullYear(); calM = n.getMonth(); paintCal(); };
+    paintCal();
   }
 
   /* ============ 渲染：体重 ============ */
@@ -2325,7 +2352,6 @@
       : `<div class="card-sub">今天还没记录饮品</div>`;
     const drinkBtns = (D.nutrition.drinks || []).map((d) => `<button class="drink" data-drink="${d.id}">${drinkIcon(d.name)} ${esc(d.name)} +${d.water}ml</button>`).join("");
     $("#body-water").innerHTML = `
-      <button class="page-cta" id="waterCta"><span class="pc-emoji">🥃</span>喝口水<span class="pc-hint">选饮品即记录</span></button>
       <div class="card">
         <div class="card-head">
           <div class="card-title">今日饮水 / 饮品</div>
@@ -2345,7 +2371,6 @@
         ${drinkLog}
       </div>`;
 
-    const waterCta = $("#waterCta"); if (waterCta) waterCta.onclick = () => quickWaterModal();
     $$("#body-water [data-drink]").forEach((b) => b.onclick = () => {
       const d = D.nutrition.drinks.find((x) => x.id === b.dataset.drink); if (!d) return;
       const old = D.nutrition.water[t] || { water: 0, caffeine: 0, chlorogenic: 0, theophylline: 0, drinks: [] };
@@ -2365,7 +2390,7 @@
     const ft = D.fitness; const e = ft.calendar[ds] || { parts: [], creatine: false, fishOil: false };
     let sel = [...(e.parts || [])], cr = !!e.creatine, fo = !!e.fishOil;
     const render = () => {
-      $("#modalBody").innerHTML = `<div class="card-title mb-2">${ds.slice(5)} · 训练打卡</div>
+      $("#modalBody").innerHTML = `<div class="card-sub mb-2">选部位 / 补剂，保存即生效</div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;">${CAL_PARTS.map((p) => `<button class="btn btn-sm ${sel.includes(p) ? "btn-primary" : "btn-ghost"}" data-p="${p}">${partIcon(p)} ${p}</button>`).join("")}</div>
         <div class="row" style="padding:10px 0;"><div class="row-main"><div class="row-title">💊 肌酸</div></div><div class="toggle ${cr ? "on" : ""}" data-t="cr" style="width:44px;height:24px;border-radius:12px;background:${cr ? "var(--accent)" : "var(--line)"};position:relative;cursor:pointer;"><div style="width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:2px;left:${cr ? "22px" : "2px"};transition:left .2s;"></div></div></div>
         <div class="row" style="padding:10px 0;"><div class="row-main"><div class="row-title">🐟 鱼油</div></div><div class="toggle ${fo ? "on" : ""}" data-t="fo" style="width:44px;height:24px;border-radius:12px;background:${fo ? "var(--accent)" : "var(--line)"};position:relative;cursor:pointer;"><div style="width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:2px;left:${fo ? "22px" : "2px"};transition:left .2s;"></div></div></div>
@@ -2380,7 +2405,8 @@
       $("#dayClear").onclick = () => { delete ft.calendar[ds]; save(); closeModal(); renderFitness(); renderOverview(); if (curPage === "calendar") renderCalendar(); };
       $("#daySave").onclick = () => { if (!sel.length && !cr && !fo) delete ft.calendar[ds]; else ft.calendar[ds] = { parts: [...sel], creatine: cr, fishOil: fo }; save(); closeModal(); renderFitness(); renderOverview(); if (curPage === "calendar") renderCalendar(); };
     };
-    openModal("训练打卡", ""); render();
+    // 标题带日期（含星期）：标记肌酸/鱼油后回日历也能随时确认是哪天
+    openModal(`${ds.slice(5)} 周${WK[dateFromStr(ds).getDay()]} · 训练打卡`, ""); render();
   }
 
   let trainCollapsed = Object.fromEntries(TRAIN_PARTS.map((p) => [p, true]));
@@ -3475,6 +3501,9 @@
   }
   let curPage = "overview";
   let _initialized = false; // 标记是否已完成首次全量渲染
+  let _navDirHint = null;   // 翻页方向提示："next"(左滑前进) / "prev"(右滑后退)，供 navigate 选动画
+  // 滑动切页顺序：底边栏 6 模块在前，日历/训练/设置收在尾部（仍可从顶栏菜单进）
+  const SWIPE_ORDER = ["overview", "weight", "water", "nutrition", "punch", "finance", "calendar", "fitness", "settings"];
   const _renderMap = {
     overview: renderOverview, calendar: renderCalendar, weight: renderWeight,
     nutrition: renderNutrition, fitness: renderFitness, finance: renderFinance,
@@ -3483,10 +3512,96 @@
   function navigate(p) {
     curPage = p;
     $$(".nav-item, .tab-item").forEach((b) => b.classList.toggle("active", b.dataset.page === p));
-    $$(".page").forEach((pg) => pg.classList.toggle("active", pg.id === "page-" + p));
+    $$(".page").forEach((pg) => {
+      const on = pg.id === "page-" + p;
+      if (on) {
+        pg.classList.remove("swipe-next", "swipe-prev");
+        if (_navDirHint) pg.classList.add(_navDirHint === "prev" ? "swipe-prev" : "swipe-next");
+      }
+      pg.classList.toggle("active", on);
+    });
     closeDrawer();
     // 只渲染目标页面（首次加载由 renderAll 统一处理）
     if (_initialized && _renderMap[p]) _renderMap[p]();
+  }
+
+  /* ============ 左右滑动切页（触屏 + 桌面鼠标拖拽） ============ */
+  const SWIPE_MIN = 60;  // 触发翻页的最小横向距离（px）
+  const SWIPE_LOCK = 10; // 方向锁定阈值（px）
+  let _sw = null;        // 触屏手势状态
+  function swipeTarget(dir) { // dir: 1=下一张（左滑），-1=上一张（右滑）
+    const i = SWIPE_ORDER.indexOf(curPage);
+    if (i < 0) return null;
+    return SWIPE_ORDER[i + dir] || null;
+  }
+  function doSwipe(dx) {
+    const next = swipeTarget(dx < 0 ? 1 : -1);
+    if (!next) return;
+    _navDirHint = dx < 0 ? "next" : "prev";
+    navigate(next);
+    _navDirHint = null;
+    window.scrollTo(0, 0); // 翻页后回到顶部（和原生翻页体验一致）
+  }
+  function bindSwipe() {
+    const main = $(".main");
+    if (!main) return;
+    // 表单/横向滚动容器内不劫持手势；弹窗/抽屉打开时（遮罩盖在上面）整体禁用
+    const blocked = (t) => !!(t && t.closest && t.closest("input, textarea, select, .table-wrap, [contenteditable='true']"));
+    const busy = () => $("#overlay").classList.contains("on") || $("#backdrop").classList.contains("on");
+    const start = (x, y, target) => {
+      if (busy() || blocked(target)) return null;
+      return { x0: x, y0: y, dx: 0, axis: null, page: document.getElementById("page-" + curPage), blocked: false };
+    };
+    const move = (sw, x, y) => {
+      const dx = x - sw.x0, dy = y - sw.y0;
+      if (!sw.axis) {
+        if (Math.abs(dx) < SWIPE_LOCK && Math.abs(dy) < SWIPE_LOCK) return false;
+        sw.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+      }
+      if (sw.axis !== "x") return false;
+      sw.dx = dx;
+      if (sw.page) sw.page.style.transform = `translateX(${(dx * 0.35).toFixed(1)}px)`;
+      return true;
+    };
+    const finish = (sw) => {
+      if (!sw) return;
+      if (sw.page) sw.page.style.transform = "";
+      if (sw.axis === "x" && Math.abs(sw.dx) >= SWIPE_MIN) doSwipe(sw.dx);
+    };
+
+    main.addEventListener("touchstart", (e) => {
+      if (e.touches.length !== 1) { _sw = null; return; }
+      const t = e.touches[0];
+      _sw = start(t.clientX, t.clientY, e.target);
+    }, { passive: true });
+    main.addEventListener("touchmove", (e) => {
+      if (!_sw || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      if (move(_sw, t.clientX, t.clientY)) e.preventDefault(); // 横滑：阻止页面滚动/回弹
+    }, { passive: false });
+    const touchEnd = () => { finish(_sw); _sw = null; };
+    main.addEventListener("touchend", touchEnd, { passive: true });
+    main.addEventListener("touchcancel", touchEnd, { passive: true });
+
+    // 桌面端：鼠标左键拖拽同样可翻页
+    let mouse = null;
+    main.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      mouse = start(e.clientX, e.clientY, e.target);
+    });
+    window.addEventListener("mousemove", (e) => {
+      if (!mouse) return;
+      if (move(mouse, e.clientX, e.clientY)) e.preventDefault(); // 阻止拖拽选中文本
+    });
+    window.addEventListener("mouseup", () => { finish(mouse); mouse = null; });
+
+    // 首次使用给一次提示
+    try {
+      if (!localStorage.getItem("tlr_swipe_hint")) {
+        localStorage.setItem("tlr_swipe_hint", "1");
+        setTimeout(() => toast("💡 左右滑动可切换页面"), 900);
+      }
+    } catch (e) {}
   }
   function openDrawer() { $("#sidebar").classList.add("open"); $("#backdrop").classList.add("on"); }
   function closeDrawer() { $("#sidebar").classList.remove("open"); $("#backdrop").classList.remove("on"); }
@@ -3503,6 +3618,7 @@
 
   /* ============ 事件 & 启动 ============ */
   function bind() {
+    bindSwipe(); // 左右滑动切页（触屏 + 桌面鼠标拖拽）
     $$(".nav-item").forEach((b) => (b.onclick = () => navigate(b.dataset.page)));
     // 底部快捷栏：普通项直接跳页，「菜单」项复用抽屉（桌面端 tabbar 隐藏，绑了也不影响）
     $$(".tab-item").forEach((b) => (b.onclick = () => {
@@ -3531,28 +3647,6 @@
         if (_renderMap[curPage]) _renderMap[curPage]();
       }, 150);
     });
-    bindGestures();
-  }
-
-  /* ============ 手势：右滑关弹窗/开侧栏，左滑收起侧栏 ============ */
-  function bindGestures() {
-    const ov = $("#overlay"), sb = $("#sidebar");
-    let sx = 0, sy = 0;
-    const modalOpen = () => ov.classList.contains("on");
-    const drawerOpen = () => sb.classList.contains("open");
-    window.addEventListener("touchstart", (e) => { const t = e.touches[0]; sx = t.clientX; sy = t.clientY; }, { passive: true });
-    window.addEventListener("touchend", (e) => {
-      const t = e.changedTouches[0];
-      const dx = t.clientX - sx, dy = t.clientY - sy;
-      const adx = Math.abs(dx), ady = Math.abs(dy);
-      if (adx < 50 || adx < ady * 1.5) return; // 非水平滑动（如纵向滚屏）忽略
-      if (dx > 0) { // 向右滑
-        if (modalOpen()) closeModal();
-        else if (!drawerOpen()) openDrawer();
-      } else { // 向左滑
-        if (drawerOpen()) closeDrawer();
-      }
-    }, { passive: true });
   }
 
   function setThemeIcon() {
