@@ -257,7 +257,6 @@ body {
 }
 .hero-dark::after { content: ""; position: absolute; right: -40px; top: -40px; width: 200px; height: 200px; border-radius: 50%; background: radial-gradient(circle, rgba(14,159,110,.35), transparent 70%); }
 .hero-dark .hd-label { font-size: var(--fs-sm); color: #8b93a7; }
-.hero-dark .hd-main { font-size: var(--fs-3xl); font-weight: 800; margin: 8px 0 18px; font-family: var(--font-num); letter-spacing: -1.5px; }
 .hero-dark .hd-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .hero-dark .hd-grid-4 { grid-template-columns: repeat(4, 1fr); }
 .hero-dark .hd-item { background: rgba(255,255,255,.07); border-radius: var(--r-md); padding: 14px; }
@@ -278,6 +277,14 @@ body {
 .hero-dark .hd-save-rate b { display: block; font-size: var(--fs-lg); font-family: var(--font-num); color: #e0f2fe; }
 .hero-dark .hd-save-earmark { font-size: var(--fs-sm); color: #bae6fd; margin-top: 6px; }
 .hero-dark .hd-save-earmark .num { font-family: var(--font-num); font-weight: 800; color: #e0f2fe; }
+/* hero 第一优先级：流动资金独立色块（与储蓄存款同款格子，翡翠绿；数字略大保住第一眼） */
+.hero-dark .hd-liquid { margin: 0 0 16px; padding: 12px 16px 10px; background: rgba(16,185,129,.10); border: 1px solid rgba(16,185,129,.30); border-radius: var(--r-md); }
+.hero-dark .hd-liquid .hd-label { color: #6ee7b7; font-weight: 700; }
+.hero-dark .hd-liquid .hd-second { color: #6ee7b7; font-size: calc(var(--fs-2xl) + 4px); }
+.hero-dark .hd-liquid .hd-save-rate { color: #a7f3d0; }
+.hero-dark .hd-liquid .hd-save-rate b { color: #d1fae5; }
+.hero-dark .hd-liquid .hd-save-earmark { color: #a7f3d0; }
+.hero-dark .hd-liquid .hd-save-earmark .num { color: #d1fae5; }
 /* 净资产沉到页脚小字（不再是第一眼） */
 .hero-dark .hd-foot { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.10); display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: var(--fs-sm); color: #8b93a7; }
 .hero-dark .hd-foot .num { font-family: var(--font-num); font-weight: 800; font-size: var(--fs-base); }
