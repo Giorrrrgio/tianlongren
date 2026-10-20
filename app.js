@@ -1181,7 +1181,7 @@
       if (q === "weight") quickWeightModal();
       else if (q === "calendar") navigate("calendar");
       else if (q === "meal") { curMealDate = effectiveToday(); quickMealModal(); }
-      else if (q === "punchIn") punchModal();
+      else if (q === "punchIn") smartPunch();
       else if (q === "finance") quickTxnModal();
       else if (q === "water") quickWaterModal();
     }));
@@ -1294,25 +1294,33 @@
     toast("已记录 " + (st ? st.label : key) + " " + nowHM());
   }
   // 一键工作流：弹窗选段次 + 时间，写入对应段，自动同步到打卡界面
-  function punchModal() {
+  // preKey：smartPunch 传入的预选段（已打过自动带入 / 确定区间但需确认时）
+  function punchModal(preKey) {
     const t = effectiveToday(); const tm = (punchRec(t).times) || {};
-    let sel = null;
-    const segs = PUNCH_STEPS.map((s) => `<button class="pseg" data-seg="${s.key}"><div class="pseg-ic">${s.emoji}</div><div class="pseg-l">${s.label}</div><div class="pseg-t">${tm[s.key] || "未打卡"}</div></button>`).join("");
+    // 自动识别当前时段：确定区间直接预选（用户只需确认或改时间），空隙时段留空手选
+    let sel = preKey || smartPunchKey() || null;
+    const autoKey = !!sel && smartPunchKey() === sel; // 这拨预选是「按时间自动识别」出来的
+    const segs = PUNCH_STEPS.map((s) => `<button class="pseg${sel === s.key ? " active" : ""}" data-seg="${s.key}"><div class="pseg-ic">${s.emoji}</div><div class="pseg-l">${s.label}</div><div class="pseg-t">${tm[s.key] || "未打卡"}</div></button>`).join("");
     openModal("打卡", `
       <div class="pseg-grid">${segs}</div>
-      <div id="pTimeWrap" style="display:none;margin-top:14px;">
+      <div id="pTimeWrap" style="display:${sel ? "block" : "none"};margin-top:14px;">
         <label style="display:block;margin-bottom:6px;color:var(--slate);">选择时间（默认当前时刻）</label>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <input type="time" id="pTime" class="punch-time" style="flex:1;">
-          <button class="btn btn-sm btn-ghost" id="pNow">现在</button>
+        <div style="flex-direction:column;gap:8px;align-items:stretch;">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="time" id="pTime" class="punch-time" style="flex:1;">
+            <button class="btn btn-sm btn-ghost" id="pNow">现在</button>
+          </div>
+          <div class="card-sub" id="pAutoTip" style="display:${autoKey ? "block" : "none"};">已按当前时间自动识别 · 可直接确认，也可改时间</div>
         </div>
         <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end;">
           <button class="btn btn-ghost" id="pCancel">取消</button>
           <button class="btn btn-primary" id="pOk">确认打卡</button>
         </div>
       </div>
-      <div id="pHint" class="card-sub mt-2">请选择要打卡的时段</div>`);
+      <div id="pHint" class="card-sub mt-2">${sel ? "已选：" + PUNCH_STEPS.find((x) => x.key === sel).label : "请选择要打卡的时段"}</div>`);
     const wrap = $("#pTimeWrap"), hint = $("#pHint"), timeInp = $("#pTime");
+    // 预选段时：时间默认当前时刻；重打已打卡段时默认回填原值
+    timeInp.value = (sel && tm[sel]) || nowHM();
     $$("#modalBody .pseg").forEach((b) => (b.onclick = () => {
       sel = b.dataset.seg;
       timeInp.value = (punchRec(t).times || {})[sel] || nowHM();
@@ -3574,6 +3582,39 @@
     { key: "pmOut", label: "下午下班", emoji: "🌆", win: "17:00", leave: true },
   ];
   function punchRec(ds) { D.punch = D.punch || {}; return D.punch[ds] || (D.punch[ds] = { times: {}, ot: 0 }); }
+  /* 一键打卡智能识别：按当前时间自动判断该打哪张卡。
+   * 用户规则（2026-10-20）：
+   *   08:15 之前        → 上午上班卡（amIn）
+   *   12:00–13:00       → 上午下班卡（amOut）
+   *   13:00–14:00       → 下午上班卡（pmIn）
+   *   17:00 之后        → 傍晚下班卡（pmOut）
+   * 空隙时段（08:15–12:00 / 14:00–17:00）不做猜测——返回 null，弹窗手动选。
+   * 边界按「分钟」比较：08:14:59 也算早于 08:15。 */
+  function smartPunchKey(d) {
+    d = d || new Date();
+    const mins = d.getHours() * 60 + d.getMinutes();
+    if (mins < 8 * 60 + 15) return "amIn";              // 早于 08:15
+    if (mins >= 12 * 60 && mins < 13 * 60) return "amOut"; // 12:00–12:59
+    if (mins >= 13 * 60 && mins < 14 * 60) return "pmIn";  // 13:00–13:59
+    if (mins >= 17 * 60) return "pmOut";                // 17:00 及以后
+    return null;                                        // 空隙时段不猜
+  }
+  /* 一键打卡（总览「🕗 打卡」/ 打卡页「打个卡」的统一入口）：
+   * 时间落在确定区间 → 直接记当前时刻（toast 说明识别结果）；
+   * 该卡今天已打过 → 不静默覆盖，弹窗预选该段让人确认；
+   * 空隙时段 → 弹窗手动选（保留选择权）。 */
+  function smartPunch() {
+    const t = effectiveToday();
+    const key = smartPunchKey();
+    if (!key) { punchModal(); return; }
+    const st = PUNCH_STEPS.find((s) => s.key === key);
+    const tm = (punchRec(t).times) || {};
+    if (tm[key]) { punchModal(key); return; } // 已打过：预选该段弹窗，允许改时间/确认覆盖
+    const now = nowHM();
+    punchRec(t).times[key] = now;
+    save(); renderPunch(); renderOverview();
+    toast("已按时间识别 · " + st.label + " " + now);
+  }
   function toMin(hm) { if (!hm || !/^\d{1,2}:\d{2}$/.test(hm)) return null; const [h, m] = hm.split(":").map(Number); return h * 60 + m; }
   function nowHM() { const d = new Date(); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
   function renderPunch() {
@@ -3663,7 +3704,7 @@
         <div class="punch-hist">${hist}</div>
       </div>`;
     // 事件委托：打卡操作（时间修改/现在打卡/删除/清空）
-    const punchCta = $("#punchCta"); if (punchCta) punchCta.onclick = () => punchModal();
+    const punchCta = $("#punchCta"); if (punchCta) punchCta.onclick = () => smartPunch();
     $("#body-punch").onchange = (e) => {
       const d = e.target;
       if (d.classList.contains("punch-time")) { punchRec(t).times[d.dataset.pk] = d.value; save(); renderPunch(); }
