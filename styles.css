@@ -285,6 +285,11 @@ body {
 .hero-dark .hd-liquid .hd-save-rate b { color: #d1fae5; }
 .hero-dark .hd-liquid .hd-save-earmark { color: #a7f3d0; }
 .hero-dark .hd-liquid .hd-save-earmark .num { color: #d1fae5; }
+/* 发薪日倒计时：琥珀小条（每月 15 日 18:00，第三眼） */
+.hero-dark .hd-payday { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 10px; margin: 0 0 16px; padding: 10px 16px; background: rgba(251,191,36,.10); border: 1px solid rgba(251,191,36,.28); border-radius: var(--r-md); }
+.hero-dark .hd-payday-l { font-size: var(--fs-sm); font-weight: 700; color: #fcd34d; white-space: nowrap; }
+.hero-dark .hd-payday-v { font-size: var(--fs-sm); color: #fde68a; text-align: right; }
+.hero-dark .hd-payday-v b { font-family: var(--font-num); font-weight: 800; color: #fef3c7; }
 /* 净资产沉到页脚小字（不再是第一眼） */
 .hero-dark .hd-foot { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.10); display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: var(--fs-sm); color: #8b93a7; }
 .hero-dark .hd-foot .num { font-family: var(--font-num); font-weight: 800; font-size: var(--fs-base); }
