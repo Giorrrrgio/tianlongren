@@ -2755,6 +2755,31 @@
   /* ============ 渲染：财务 ============ */
   let fCurMonth = cmk();
   let lastTxnDate = ""; // 记账后整页重渲染会重建表单，用它把补录日期还回去
+  /* 发薪日倒计时：每月 15 日 18:00。返回下一个发薪时刻（已过则顺延到下个月 15 日） */
+  function nextPayday(now) {
+    now = now || new Date();
+    let t = new Date(now.getFullYear(), now.getMonth(), 15, 18, 0, 0);
+    if (now.getTime() >= t.getTime()) t = new Date(now.getFullYear(), now.getMonth() + 1, 15, 18, 0, 0);
+    return t;
+  }
+  /* 倒计时文案：>1天「还有 X天 HH:MM:SS」/ 当天「今天 18:00 发薪 · 还有 HH:MM:SS」/ <1小时纯 HH:MM:SS */
+  function paydayText(now) {
+    now = now || new Date();
+    const p = nextPayday(now);
+    let ms = Math.max(0, p.getTime() - now.getTime());
+    const days = Math.floor(ms / 86400000); ms -= days * 86400000;
+    const hrs = Math.floor(ms / 3600000); ms -= hrs * 3600000;
+    const mins = Math.floor(ms / 60000); ms -= mins * 60000;
+    const secs = Math.floor(ms / 1000);
+    const p2 = (n) => String(n).padStart(2, "0");
+    const isToday = p.getFullYear() === now.getFullYear() && p.getMonth() === now.getMonth() && p.getDate() === now.getDate();
+    const main = days > 0
+      ? "还有 <b>" + days + "天 " + p2(hrs) + ":" + p2(mins) + ":" + p2(secs) + "</b>"
+      : isToday
+        ? "今天 18:00 发薪 · 还有 <b>" + p2(hrs) + ":" + p2(mins) + ":" + p2(secs) + "</b>"
+        : "还有 <b>" + p2(hrs) + ":" + p2(mins) + ":" + p2(secs) + "</b>";
+    return main + " · " + (p.getMonth() + 1) + "月" + p.getDate() + "日 18:00";
+  }
   function renderFinance() {
     const F = D.finance; const nw = netWorth(); const ms = monthSummary(fCurMonth);
     const sp = acctSplit(); const sr = saveRate();
@@ -2786,6 +2811,12 @@
             <div class="hd-second">${MM(sp.save)}</div>
             <div class="hd-save-rate">储蓄率<b>${Math.round(sr * 100)}%</b></div>
           </div>
+        </div>
+
+        <!-- ③ 发薪日倒计时：每月 15 日 18:00 -->
+        <div class="hd-payday">
+          <span class="hd-payday-l">💰 发薪日倒计时</span>
+          <span class="hd-payday-v">${paydayText()}</span>
         </div>
 
         ${(() => {
@@ -3999,6 +4030,9 @@
       const m = String(now.getMinutes()).padStart(2, "0");
       const s = String(now.getSeconds()).padStart(2, "0");
       timeEl.innerHTML = h + ":" + m + ':<span class="sec">' + s + "</span>";
+      // 财务页「发薪日倒计时」跟着秒表走字（只改这一个元素，不整页重渲染）
+      const pv = document.querySelector("#body-finance .hd-payday-v");
+      if (pv) pv.innerHTML = paydayText(now);
     };
     tick();
     _clockTimer = setInterval(tick, 1000);
