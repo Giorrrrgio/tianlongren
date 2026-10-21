@@ -2792,9 +2792,15 @@
 
       <button class="page-cta" id="finCta"><span class="pc-emoji">💵</span>记一笔<span class="pc-hint">支出 · 收入 · 转账</span></button>
 
-      <!-- 资产总览：①流动资金独立色块 → ②存款独立色块 → 趋势/四格 → 净资产沉到页脚 -->
+      <!-- 资产总览：①发薪日倒计时 → ②流动资金独立色块 → ③存款独立色块 → 趋势/四格 → 净资产沉到页脚 -->
       <div class="hero-dark">
-        <!-- ① 流动资金：第一眼 · 独立色块（与储蓄存款同款格子，翡翠绿） -->
+        <!-- ① 发薪日倒计时：每月 15 日 18:00 -->
+        <div class="hd-payday">
+          <span class="hd-payday-l">💰 发薪日倒计时</span>
+          <span class="hd-payday-v">${paydayText()}</span>
+        </div>
+
+        <!-- ② 流动资金：第一眼 · 独立色块（与储蓄存款同款格子，翡翠绿） -->
         <div class="hd-liquid">
           <div class="hd-label">流动资金 · 随时可动用</div>
           <div class="hd-save-row">
@@ -2804,19 +2810,13 @@
           ${sp.earmark ? `<div class="hd-save-earmark">另有专款 <span class="num">${MM(sp.earmark)}</span> · 不计入流动资金</div>` : ""}
         </div>
 
-        <!-- ② 储蓄存款：第二眼 · 独立色块 -->
+        <!-- ③ 储蓄存款：第二眼 · 独立色块 -->
         <div class="hd-save">
           <div class="hd-label">储蓄存款 · 只进不出</div>
           <div class="hd-save-row">
             <div class="hd-second">${MM(sp.save)}</div>
             <div class="hd-save-rate">储蓄率<b>${Math.round(sr * 100)}%</b></div>
           </div>
-        </div>
-
-        <!-- ③ 发薪日倒计时：每月 15 日 18:00 -->
-        <div class="hd-payday">
-          <span class="hd-payday-l">💰 发薪日倒计时</span>
-          <span class="hd-payday-v">${paydayText()}</span>
         </div>
 
         ${(() => {
