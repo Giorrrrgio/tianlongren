@@ -935,6 +935,28 @@
     return `<div class="ring-wrap"><svg viewBox="0 0 132 132"><circle class="ring-bg" cx="66" cy="66" r="${r}"></circle><circle class="ring-prog" cx="66" cy="66" r="${r}" stroke="${color}" stroke-dasharray="${c}" stroke-dashoffset="${off}"></circle></svg><div class="ring-center"><div class="ring-pct" style="color:${pct > 1 ? "#f43f5e" : color}">${Math.round(pct * 100)}%</div><div class="ring-unit">${unit}</div></div></div>`;
   }
 
+  /* ============ 宏量甜甜圈：碳水/蛋白/脂肪按热量贡献占比（4/4/9 kcal/g） ============ */
+  function macroDonut(carbs, protein, fat) {
+    const segs = [
+      { label: "碳水", g: carbs, cal: carbs * 4, color: "#10b981" },
+      { label: "蛋白质", g: protein, cal: protein * 4, color: "#f43f5e" },
+      { label: "脂肪", g: fat, cal: fat * 9, color: "#f59e0b" },
+    ];
+    const total = segs.reduce((s, x) => s + x.cal, 0);
+    if (!(total > 0)) {
+      return `<div class="donut-wrap donut-empty"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="var(--line)" stroke-width="14"></circle></svg><div class="donut-center"><div class="donut-kcal" style="color:var(--ink-3)">0</div><div class="donut-unit">还没记录</div></div></div>`;
+    }
+    const R = 52, C = 2 * Math.PI * R, GAP = 4;
+    let acc = 0;
+    const arcs = segs.map((s) => {
+      const frac = s.cal / total, len = Math.max(frac * C - GAP, 1);
+      const off = -acc * C; acc += frac;
+      return `<circle cx="60" cy="60" r="${R}" fill="none" stroke="${s.color}" stroke-width="14" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${off.toFixed(2)}"></circle>`;
+    }).join("");
+    const legend = segs.map((s) => `<div class="dl-row"><span class="dl-dot" style="background:${s.color}"></span><span class="dl-name">${s.label}</span><b class="dl-g">${Math.round(s.g)}g</b><span class="dl-pct">${Math.round((s.cal / total) * 100)}%</span></div>`).join("");
+    return `<div class="donut-row"><div class="donut-wrap"><svg viewBox="0 0 120 120"><g transform="rotate(-90 60 60)">${arcs}</g></svg><div class="donut-center"><div class="donut-kcal">${Math.round(total)}</div><div class="donut-unit">kcal 三大营养素</div></div></div><div class="donut-legend">${legend}</div></div>`;
+  }
+
   /* ============ 身体趋势数据 ============ */
   function sortedWeight() { return (D.nutrition.weight || []).slice().sort((a, b) => a.date.localeCompare(b.date)); }
   function bodyTrendData(days) {
@@ -1334,6 +1356,7 @@
       const v = timeInp.value || nowHM();
       punchRec(t).times[sel] = v; save(); closeModal(); renderPunch(); renderOverview();
       toast("已记录 " + PUNCH_STEPS.find((x) => x.key === sel).label + " " + v);
+      celebratePunch(t); // 四卡打全 → 撒花 + 连续天数/破纪录
     };
   }
   function stat(label, value, foot, page) {
@@ -1407,6 +1430,7 @@
 
       <div class="card mt-3">
         <div class="card-head"><div class="card-title">宏量元素</div><span class="card-sub">蛋白质目标固定 145g / 天</span></div>
+        <div class="macro-donut">${macroDonut(inT.carbs, inT.protein, inT.fat)}</div>
         <div class="macros">
           ${macro("carb", "碳水", inT.carbs, tg.carbs)}
           ${macro("protein", "蛋白质", inT.protein, tg.protein)}
@@ -1472,8 +1496,9 @@
         if (k === "water") wp = cur;
       });
       const ring = $("#wRingProg"); if (ring) ring.style.strokeDashoffset = Math.round(2 * Math.PI * 48 * (1 - clamp(wp / 2000, 0, 1)));
-      const rp = $("#wRingPct"); if (rp) rp.textContent = Math.round(clamp(wp / 2000, 0, 1) * 100) + "%";
-      const ru = $("#wRingUnit"); if (ru) ru.textContent = Math.round(wp) + " / 2000 ml";
+      const rm = $("#wRingMl"); if (rm) rm.textContent = Math.round(wp).toLocaleString("zh-CN");
+      const rg = $("#wGoal");
+      if (rg) { const ok = wp >= 2000; rg.textContent = ok ? "🎉 已达成今日饮水目标 · 2000ml" : "还差 " + Math.round(Math.max(0, 2000 - wp)).toLocaleString("zh-CN") + " ml 达标"; rg.className = "w-goal " + (ok ? "ok" : "left"); }
       if (p < 1) requestAnimationFrame(step);
     };
     rows.forEach((r) => { const f = r.querySelector(".bar-fill"); if (f) f.style.transition = "none"; });
@@ -2539,9 +2564,15 @@
     const w = D.nutrition.water[t] || { water: 0, caffeine: 0, chlorogenic: 0, theophylline: 0, drinks: [] };
     const wlim = { water: 2500, caffeine: 250, chlorogenic: 500, theophylline: 150 };
     const wPct = clamp(w.water / 2000, 0, 1);
+    const fmtInt = (n) => Math.round(Number(n) || 0).toLocaleString("zh-CN");
+    const mlOf = (d) => (d.water != null ? d.water : ((D.nutrition.drinks || []).find((x) => x.name === d.name) || {}).water) || 0;
     const drinkLog = (w.drinks && w.drinks.length)
-      ? w.drinks.map((d, i) => `<div class="row" style="padding:6px 0;"><div class="row-main"><div class="row-title">${drinkIcon(d.name)} ${esc(d.name)}</div></div><span class="row-meta">${d.time || ""}</span><button class="mi-del" data-deldrink="${i}" title="删除" style="margin-left:8px;">×</button></div>`).join("")
+      ? `<div class="drink-tl">${w.drinks.map((d, i) => `<div class="dt-item"><span class="dt-time">${d.time || ""}</span><span class="dt-dot"></span><span class="dt-body">${drinkIcon(d.name)} ${esc(d.name)}<span class="dt-ml">+${fmtInt(mlOf(d))}ml</span></span><button class="mi-del" data-deldrink="${i}" title="删除" style="margin-left:8px;">×</button></div>`).join("")}</div>`
       : `<div class="card-sub">今天还没记录饮品</div>`;
+    const goalOK = w.water >= 2000;
+    const goalHtml = goalOK
+      ? `<div class="w-goal ok">🎉 已达成今日饮水目标 · 2000ml</div>`
+      : `<div class="w-goal left">还差 ${fmtInt(2000 - w.water)} ml 达标</div>`;
     const drinkBtns = (D.nutrition.drinks || []).map((d) => `<button class="drink" data-drink="${d.id}">${drinkIcon(d.name)} ${esc(d.name)} +${d.water}ml</button>`).join("");
     $("#body-water").innerHTML = `
       <div class="card">
@@ -2549,13 +2580,17 @@
           <div class="card-title">今日饮水 / 饮品</div>
           <button class="btn btn-sm btn-rose" data-clearwater="1">清空今日</button>
         </div>
-        <div class="ring-wrap" id="wRing" style="margin:0 auto;">
+        <div class="ring-wrap w-ring-lg" id="wRing" style="margin:0 auto;">
           <svg viewBox="0 0 120 120">
             <circle class="ring-bg" cx="60" cy="60" r="48"></circle>
             <circle class="ring-prog" id="wRingProg" cx="60" cy="60" r="48" stroke="#3b82f6" stroke-dasharray="${Math.round(2 * Math.PI * 48)}" stroke-dashoffset="${Math.round(2 * Math.PI * 48 * (1 - wPct))}"></circle>
           </svg>
-          <div class="ring-center"><div class="ring-pct" id="wRingPct">${Math.round(wPct * 100)}%</div><div class="ring-unit" id="wRingUnit">${fmt(w.water)} / 2000 ml</div></div>
+          <div class="ring-center">
+            <div class="w-ml" id="wRingMl">${fmtInt(w.water)}</div>
+            <div class="ring-unit">/ 2000 ml</div>
+          </div>
         </div>
+        ${goalHtml}
         <div class="card-sub mt-3">快速记录</div>
         <div class="drink-list mt-1">${drinkBtns}</div>
         <div class="mt-3" id="wbWrap">${waterBars(w, wlim)}</div>
@@ -2568,8 +2603,10 @@
       const old = D.nutrition.water[t] || { water: 0, caffeine: 0, chlorogenic: 0, theophylline: 0, drinks: [] };
       const x = { water: old.water, caffeine: old.caffeine, chlorogenic: old.chlorogenic, theophylline: old.theophylline, drinks: old.drinks ? old.drinks.slice() : [] };
       x.water += d.water; x.caffeine += d.caffeine; x.chlorogenic += d.chlorogenic; x.theophylline += d.theophylline;
-      x.drinks.push({ name: d.name, time: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) });
-      D.nutrition.water[t] = x; save(); renderWater(); animateWater(old, x); toast("已记录 " + d.name);
+      x.drinks.push({ name: d.name, water: d.water, time: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) });
+      const crossed = (old.water || 0) < 2000 && x.water >= 2000; // 本次首次突破 2000ml
+      D.nutrition.water[t] = x; save(); renderWater(); animateWater(old, x);
+      if (crossed) { confettiBurst("#wRing"); toast("🎉 今日饮水目标达成 · 2000ml"); } else toast("已记录 " + d.name);
     });
     $$("#body-water [data-deldrink]").forEach((b) => b.onclick = () => {
       const i = +b.dataset.deldrink; const x = D.nutrition.water[t]; if (!x || !x.drinks) return; x.drinks.splice(i, 1); save(); renderWater(); toast("已删除该条饮品");
@@ -3650,6 +3687,58 @@
     punchRec(t).times[key] = now;
     save(); renderPunch(); renderOverview();
     toast("已按时间识别 · " + st.label + " " + now);
+    celebratePunch(t, "#punchCta"); // 四卡打全 → 撒花 + 连续天数/破纪录
+  }
+  /* ============ 庆祝动效：彩纸冲刺 + 打卡里程碑 ============ */
+  function confettiBurst(sel) {
+    try {
+      const el = sel ? document.querySelector(sel) : null;
+      const r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+      const x = r && r.width ? r.left + r.width / 2 : window.innerWidth / 2;
+      const y = r && r.height ? r.top + r.height / 2 : window.innerHeight / 3;
+      const colors = ["#10b981", "#f43f5e", "#f59e0b", "#3b82f6", "#8b5cf6", "#06b6d4"];
+      for (let i = 0; i < 30; i++) {
+        const p = document.createElement("i");
+        p.className = "confetti-bit";
+        const ang = -Math.PI / 2 + (Math.random() - 0.5) * 2.4; // 向上扇形喷发
+        const v = 90 + Math.random() * 150;
+        const dx = Math.cos(ang) * v, dy = Math.sin(ang) * v;
+        const rot = (Math.random() * 720 - 360).toFixed(0);
+        p.style.left = x + "px"; p.style.top = y + "px";
+        p.style.background = colors[i % colors.length];
+        if (Math.random() < 0.5) p.style.borderRadius = "50%";
+        document.body.appendChild(p);
+        if (p.animate) {
+          const a = p.animate([
+            { transform: "translate(0,0) rotate(0deg)", opacity: 1 },
+            { transform: "translate(" + (dx * 0.75).toFixed(1) + "px," + (dy * 0.75).toFixed(1) + "px) rotate(" + (rot / 2) + "deg)", opacity: 1, offset: 0.45 },
+            { transform: "translate(" + dx.toFixed(1) + "px," + (dy + 220).toFixed(1) + "px) rotate(" + rot + "deg)", opacity: 0 }
+          ], { duration: 900 + Math.random() * 300, easing: "cubic-bezier(.2,.6,.4,1)" });
+          a.onfinish = () => p.remove();
+        } else setTimeout(() => p.remove(), 900);
+      }
+    } catch (e) {}
+  }
+  /* 连续全卡天数（含给定日向前数；中断或非全卡即止） */
+  function punchStreak(t) {
+    let n = 0; const d = dateFromStr(t);
+    for (let guard = 0; guard < 400; guard++) {
+      const tm = ((D.punch || {})[dstr(d)] || {}).times || {};
+      if (!PUNCH_STEPS.every((s) => tm[s.key])) break;
+      n++; d.setDate(d.getDate() - 1);
+    }
+    return n;
+  }
+  /* 今日四卡打全 → 撒花 + 连续天数 / 破纪录提示（punchBest 存 profile） */
+  function celebratePunch(t, sel) {
+    const tm = punchRec(t).times || {};
+    if (!PUNCH_STEPS.every((s) => tm[s.key])) return;
+    const streak = punchStreak(t);
+    D.profile = D.profile || {};
+    const best = +D.profile.punchBest || 0;
+    confettiBurst(sel);
+    if (streak > best) { D.profile.punchBest = streak; save(); toast("🏆 连续全卡 " + streak + " 天 · 新纪录！"); }
+    else toast("🎉 今日打卡全部完成 · 已连续 " + streak + " 天");
   }
   function toMin(hm) { if (!hm || !/^\d{1,2}:\d{2}$/.test(hm)) return null; const [h, m] = hm.split(":").map(Number); return h * 60 + m; }
   function nowHM() { const d = new Date(); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
