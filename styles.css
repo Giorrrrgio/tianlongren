@@ -467,6 +467,46 @@ body {
 .qt-tpl-x { position: absolute; top: 50%; right: 7px; transform: translateY(-50%); width: 15px; height: 15px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; line-height: 1; color: var(--ink-3); background: rgba(100,116,139,.14); }
 .qt-tpl-x:hover { color: #fff; background: #f43f5e; }
 
+/* ========== 本周工时（打卡页） ========== */
+.wk-hours { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+.wk-h-num { font-family: var(--font-num); font-size: 34px; font-weight: 800; line-height: 1; color: var(--ink); }
+.wk-h-num .wk-h-unit { font-size: 14px; font-weight: 700; color: var(--ink-3); margin-left: 2px; }
+.wk-h-num .wk-h-min { font-size: 18px; font-weight: 700; color: var(--ink-3); margin-left: 4px; }
+.wk-h-side { display: grid; gap: 3px; font-size: var(--fs-sm); color: var(--ink-3); }
+.wk-h-side b { font-family: var(--font-num); color: var(--ink-2); }
+.wk-bars { display: flex; align-items: flex-end; gap: 8px; height: 96px; margin-top: 14px; padding-top: 4px; }
+.wk-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; height: 100%; }
+.wk-bar { width: 100%; max-width: 34px; border-radius: 6px 6px 3px 3px; background: #e2e8f0; min-height: 4px; }
+.wk-bar.has { background: linear-gradient(180deg, #34d399, #10b981); }
+.wk-bar-col.we .wk-bar.has { background: linear-gradient(180deg, #fcd34d, #f59e0b); }
+.wk-bar-col.today .wk-bar { box-shadow: 0 0 0 2px var(--accent); }
+.wk-bar-col.future { opacity: .45; }
+.wk-bar-lb { font-size: 11px; font-weight: 700; color: var(--ink-3); }
+.wk-bar-col.today .wk-bar-lb { color: var(--accent); }
+
+/* ========== 目标体重（体重页） ========== */
+.w-goal-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
+.w-goal-l { font-size: var(--fs-sm); font-weight: 700; color: var(--ink-2); white-space: nowrap; }
+.w-goal-row input { width: 90px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); font-family: var(--font-num); font-weight: 700; }
+.w-goal-gap { font-size: var(--fs-sm); font-weight: 700; }
+.w-goal-gap.down { color: #f59e0b; }
+.w-goal-gap.up, .w-goal-gap.ok { color: #10b981; }
+.w-goal-gap.none { color: var(--ink-3); font-weight: 400; }
+
+/* ========== 今日一屏（总览四联） ========== */
+.ov-quad { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ov-q { border: 1px solid var(--border); border-radius: var(--r-md); padding: 10px 12px; background: var(--surface-2); }
+.ov-q[data-nav] { cursor: pointer; }
+.ov-q[data-nav]:active { transform: scale(.98); }
+.ov-q.warn { border-color: rgba(244,63,94,.4); background: rgba(244,63,94,.06); }
+.ov-q-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 700; color: var(--ink-3); }
+.ov-q-h b { font-family: var(--font-num); font-size: 18px; font-weight: 800; color: var(--ink); }
+.ov-q-h b.tw { color: #e11d48; }
+.ov-q-s { font-size: 12px; color: var(--ink-3); margin-top: 4px; }
+.ov-q-s.tw { color: #e11d48; font-weight: 700; }
+.mini-ring { width: 34px; height: 34px; flex: 0 0 auto; }
+.mini-ring .mini-ring-t { font-family: var(--font-num); font-size: 9px; font-weight: 800; fill: var(--ink-2); }
+
 /* ========== 餐食记录 ========== */
 /* 餐食记录 - 紧凑布局（一屏显示四餐） */
 .meal-grid {
