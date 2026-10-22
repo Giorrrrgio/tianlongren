@@ -502,6 +502,10 @@
     // frivolous
     m.frivolous = asObj(m.frivolous);
     m.frivolous.items = asArr(m.frivolous.items, true);
+    // 还款日 / 记账模板
+    m.finance.bills = asArr(m.finance.bills, true).filter((b) => isObj(b) && b.name);
+    m.finance.bills.forEach((b) => { b.day = Math.min(31, Math.max(1, Math.round(+b.day || 1))); });
+    m.finance.templates = asArr(m.finance.templates, true).filter((t) => isObj(t) && t.name);
     return m;
   }
   function mergeDefaults(base, over) {
@@ -527,6 +531,8 @@
     if (!m.finance.msets) m.finance.msets = {};
     if (!m.finance.acctClass) m.finance.acctClass = {}; // 账户分类显式配置（不配则按名字默认规则）
     if (!m.finance.txns) m.finance.txns = [];
+    if (!m.finance.bills) m.finance.bills = [];       // 还款日（每月固定日）
+    if (!m.finance.templates) m.finance.templates = []; // 常用记账模板
     if (!m.frivolous) m.frivolous = { month: cmk(), items: [] };
     if (!m.nutrition) m.nutrition = {};
     if (!m.nutrition.daily) m.nutrition.daily = {};
@@ -745,6 +751,14 @@
     });
     const sal = +st.salary || 0; if (sal > 0) ic["月薪"] = (ic["月薪"] || 0) + sal;
     return { sal, inc: sal + ti, exp: te, bal: sal + ti - te, saveIn, saveOut, saveNet: saveIn - saveOut, ec, ic };
+  }
+
+  /* 本月支出 TOP5：分类横条（金额+占比），配合饼图直观看大头 */
+  function topExpCats(mk) {
+    const ec = monthSummary(mk).ec || {};
+    const total = Object.values(ec).reduce((s, x) => s + x, 0);
+    return Object.keys(ec).map((cat) => ({ cat, amt: ec[cat], pct: total > 0 ? ec[cat] / total : 0 }))
+      .sort((a, b) => b.amt - a.amt).slice(0, 5);
   }
 
   /* ============ Toast ============ */
@@ -2138,13 +2152,35 @@
     openModal("🍣 记一餐", `<div class="meal-pick"><button class="flow-btn" data-mk="breakfast">🍳 早餐</button><button class="flow-btn" data-mk="lunch">🍱 午餐</button><button class="flow-btn" data-mk="dinner">🍲 晚餐</button><button class="flow-btn" data-mk="snack">🍎 加餐</button></div>`);
     $$("#modalBody [data-mk]").forEach((b) => b.onclick = () => { const k = b.dataset.mk; closeModal(); addMealModal(k); });
   }
+  /* 常吃快捷 chips：同一餐别最近 7 天的菜，按出现次数取前 6，点一下整套填入（名称+营养） */
+  function recentMeals(mealKey, refDate) {
+    const days = [];
+    for (let i = 0; i < 7; i++) { const d = dateFromStr(refDate); d.setDate(d.getDate() - i); days.push(dstr(d)); }
+    const cnt = new Map();
+    for (const ds of days) {
+      for (const it of ((D.nutrition.daily[ds] || {})[mealKey] || [])) {
+        if (!it || !it.name) continue;
+        if (!cnt.has(it.name)) cnt.set(it.name, { it, n: 0, last: ds });
+        const e = cnt.get(it.name); e.n++; if (ds > e.last) e.last = ds;
+      }
+    }
+    return [...cnt.values()].sort((a, b) => b.n - a.n || b.last.localeCompare(a.last)).slice(0, 6);
+  }
+  function favChipsHtml(mealKey, refDate) {
+    const fav = recentMeals(mealKey, refDate);
+    if (!fav.length) return "";
+    return `<div class="card-sub mt-3">常吃 · 最近 7 天${MEALS.find((x) => x.k === mealKey) ? "的" + MEALS.find((x) => x.k === mealKey).name : ""}</div>
+      <div class="fav-chips mt-1" id="favChips">${fav.map((e, i) => `<button class="fav-chip" data-fav="${i}" title="点击直接填入">${esc(e.it.name)}${e.n > 1 ? '<span class="fav-n">×' + e.n + "</span>" : ""}</button>`).join("")}</div>`;
+  }
   function addMealModal(mealKey) {
     const m = MEALS.find((x) => x.k === mealKey);
     const md = curMealDate || effectiveToday();
+    const fav = recentMeals(mealKey, md);
     openModal(`添加${m.name} · ${md.slice(5)}`, `
       <div class="card-sub mb-2">粘贴餐食描述自动识别，或手动填写营养：</div>
       <div class="fld full"><label>智能识别</label><textarea id="smart" placeholder="粘贴豆包等营养素分析，自动识别：辣椒炒肉50g… 总热量：814 碳水：45.2 蛋白质：38.1 脂肪：22.4 胆固醇：210 嘌呤：180"></textarea></div>
       <button class="btn btn-sm" id="pasteBtn">📋 粘贴并识别</button>
+      ${favChipsHtml(mealKey, md)}
       <div class="form form-2 mt-2">
         <div class="fld"><label>名称</label><input id="mName" placeholder="吃了什么"></div>
         <div class="fld"><label>热量 kcal</label><input id="mCal" type="number" placeholder="0"></div>
@@ -2232,6 +2268,19 @@
         toast("无法读取剪贴板，请长按输入框手动粘贴后再点本按钮", "warn");
       }
     };
+    // 常吃 chips：点一下把整条历史记录（名称+全部营养）填进表单，改改数量就能存
+    $$("#modalBody [data-fav]").forEach((b) => (b.onclick = () => {
+      const e = fav[+b.dataset.fav]; if (!e) return;
+      const r = e.it;
+      $("#mName").value = r.name;
+      $("#mCal").value = r.calories || 0;
+      $("#mC").value = r.carbs || 0;
+      $("#mP").value = r.protein || 0;
+      $("#mF").value = r.fat || 0;
+      $("#mCh").value = r.cholesterol || 0;
+      $("#mPu").value = r.purine || 0;
+      toast("已填入常吃 · 可手动改后保存");
+    }));
     $("#mSubmit").onclick = () => {
       const name = $("#mName").value.trim() || "未命名";
       const rec = { id: Date.now(), name, calories: +$("#mCal").value || 0, carbs: +$("#mC").value || 0, protein: +$("#mP").value || 0, fat: +$("#mF").value || 0, cholesterol: +$("#mCh").value || 0, purine: +$("#mPu").value || 0 };
@@ -2817,25 +2866,86 @@
         : "还有 <b>" + p2(hrs) + ":" + p2(mins) + ":" + p2(secs) + "</b>";
     return main + " · " + (p.getMonth() + 1) + "月" + p.getDate() + "日 18:00";
   }
+  /* ============ 还款日提醒（每月固定日，仿发薪日倒计时） ============ */
+  function bills() { if (!D.finance.bills) D.finance.bills = []; return D.finance.bills; }
+  /* 下一个还款日：本月该日还没到（含今天）→ 本月，否则顺延下月；
+     day 超出当月天数时钳到月末（设 31 号，2 月按 28/29 号算） */
+  function nextBillDate(day, now) {
+    now = now || new Date();
+    const clamp = (y, m) => { const last = new Date(y, m + 1, 0).getDate(); return new Date(y, m, Math.min(Math.max(1, day | 0), last)); };
+    const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    let t = clamp(now.getFullYear(), now.getMonth());
+    if (t.getTime() < today0.getTime()) t = clamp(now.getFullYear(), now.getMonth() + 1);
+    return t;
+  }
+  function daysUntil(d, now) {
+    now = now || new Date();
+    const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - today0.getTime()) / 86400000);
+  }
+  /* 最近的还款（含倒计时天数）；没有配置返回 null */
+  function nearestBill(now) {
+    const list = bills().filter((b) => b && b.name && b.day);
+    if (!list.length) return null;
+    const withDate = list.map((b) => ({ bill: b, date: nextBillDate(b.day, now), left: daysUntil(nextBillDate(b.day, now), now) }));
+    withDate.sort((a, b) => a.left - b.left || a.date - b.date);
+    return withDate[0];
+  }
+  function renderBillList() {
+    const el = $("#billList"); if (!el) return;
+    const list = bills().slice().sort((a, b) => (a.day | 0) - (b.day | 0));
+    el.innerHTML = list.length
+      ? list.map((b) => {
+        const d = nextBillDate(b.day); const left = daysUntil(d);
+        const urgent = left <= 3;
+        return `<div class="row"><div class="row-ic" style="background:${urgent ? "#ffe4e6" : "#f1f5f9"};color:${urgent ? "#be1239" : "#64748b"};">💳</div><div class="row-main"><div class="row-title">${esc(b.name)}</div><div class="row-meta">每月 ${b.day} 日 · 下次 ${d.getMonth() + 1}月${d.getDate()}日</div></div><span class="num" style="color:${urgent ? "#be1239" : "var(--ink-3)"};font-weight:800;">${left === 0 ? "今天" : left + " 天"}</span><button class="mi-del" data-delbill="${b.id}" title="删除">×</button></div>`;
+      }).join("")
+      : `<div class="card-sub">还没设还款日 · 填上面的名称和日期添加</div>`;
+    $$("#billList [data-delbill]").forEach((btn) => (btn.onclick = () => {
+      D.finance.bills = bills().filter((x) => x.id !== btn.dataset.delbill);
+      save(); renderBillList(); renderFinance(); toast("已删除该还款日");
+    }));
+  }
+  function addBill() {
+    const name = ($("#billName").value || "").trim();
+    const day = Math.round(+$("#billDay").value || 0);
+    if (!name) { toast("先填名称", "warn"); return; }
+    if (!(day >= 1 && day <= 31)) { toast("日期填 1-31", "warn"); return; }
+    bills().push({ id: newTxnId(), name, day });
+    save(); $("#billName").value = ""; $("#billDay").value = "";
+    renderBillList(); renderFinance(); toast("已添加 · " + name);
+  }
   function renderFinance() {
     const F = D.finance; const nw = netWorth(); const ms = monthSummary(fCurMonth);
     const sp = acctSplit(); const sr = saveRate();
     const invProfit = D.finance.invs.reduce((s, i) => s + ((+i.cv || 0) - (+i.cap || 0)), 0);
     rolloverFriv();
     const frivT = frivTotal(); const frivC = frivItems().length; const frivM = cmk();
+    const top5 = topExpCats(fCurMonth);
     finApplyClass();
     $("#body-finance").innerHTML = `
       ${finLockBar()}
 
       <button class="page-cta" id="finCta"><span class="pc-emoji">💵</span>记一笔<span class="pc-hint">支出 · 收入 · 转账</span></button>
 
-      <!-- 资产总览：①发薪日倒计时 → ②流动资金独立色块 → ③存款独立色块 → 趋势/四格 → 净资产沉到页脚 -->
+      <!-- 资产总览：①发薪日倒计时 → ①b还款紧急提醒 → ②流动资金独立色块 → ③存款独立色块 → 趋势/四格 → 净资产沉到页脚 -->
       <div class="hero-dark">
         <!-- ① 发薪日倒计时：每月 15 日 18:00 -->
         <div class="hd-payday">
           <span class="hd-payday-l">💰 发薪日倒计时</span>
           <span class="hd-payday-v">${paydayText()}</span>
         </div>
+
+        <!-- ①b 还款紧急提醒：3 天内到期才冒出来（平时在下方「还款日」卡里管） -->
+        ${(() => {
+          const nb = nearestBill();
+          if (!nb || nb.left > 3) return "";
+          const urgent = nb.left <= 1;
+          return `<div class="hd-bill ${urgent ? "urgent" : ""}">
+            <span class="hd-bill-l">💳 还款提醒</span>
+            <span class="hd-bill-v">${esc(nb.bill.name)} · ${nb.left === 0 ? "<b>今天还款</b>" : "还有 <b>" + nb.left + " 天</b>"} · ${nb.date.getMonth() + 1}月${nb.date.getDate()}日</span>
+          </div>`;
+        })()}
 
         <!-- ② 流动资金：第一眼 · 独立色块（与储蓄存款同款格子，翡翠绿） -->
         <div class="hd-liquid">
@@ -2931,10 +3041,38 @@
         </div>
       </div>
 
+      <!-- 还款日管理：每月固定日（信用卡/花呗/贷款），3 天内到期时 hero 顶部冒红条 -->
+      <div class="card mt-3">
+        <div class="card-head"><div class="card-title">还款日 💳</div><span class="card-sub">每月固定日 · 临近 3 天顶部提醒</span></div>
+        <div id="billList"></div>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <input id="billName" placeholder="名称（中信账单 / 花呗）" style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid var(--border);">
+          <input id="billDay" type="number" min="1" max="31" placeholder="日" style="width:64px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);">
+          <button class="btn btn-sm btn-primary" id="addBill" style="flex:0 0 auto;">+</button>
+        </div>
+      </div>
+
       <!-- 图表前置：支出/收入饼图紧跟 hero，直观看钱花哪了/哪来的 -->
       <div class="grid grid-2 mt-3">
         <div class="card"><div class="card-head"><div class="card-title">支出分类</div><span class="card-sub">${fCurMonth.replace("-", "年")}月</span></div><div class="chart-box"><canvas id="chExp" class="chart"></canvas></div></div>
         <div class="card"><div class="card-head"><div class="card-title">收入来源</div><span class="card-sub">${fCurMonth.replace("-", "年")}月</span></div><div class="chart-box"><canvas id="chInc" class="chart"></canvas></div></div>
+      </div>
+
+      <!-- 本月支出 TOP5：横条排名，比饼图更直观看「大头是哪几类」 -->
+      <div class="card mt-3">
+        <div class="card-head"><div class="card-title">支出 TOP5</div><span class="card-sub">${fCurMonth.replace("-", "年")}月 · 共 ${MM(ms.exp)}</span></div>
+        ${top5.length ? top5.map((x, i) => {
+          const pctTxt = x.pct <= 0 ? "0%" : (Math.round(x.pct * 100) < 1 ? "<1%" : Math.round(x.pct * 100) + "%");
+          return `
+          <div class="top5-row">
+            <span class="top5-rank r${i + 1}">${i + 1}</span>
+            <div class="top5-main">
+              <div class="top5-line"><span class="top5-cat">${catIcon(x.cat)} ${esc(x.cat)}</span><b class="num">${MM(x.amt)}</b></div>
+              <div class="top5-bar"><i style="width:${Math.max(4, Math.round(x.pct * 100))}%"></i></div>
+            </div>
+            <span class="top5-pct">${pctTxt}</span>
+          </div>`;
+        }).join("") : `<div class="card-sub">本月还没有支出记录</div>`}
       </div>
 
       <!-- 记账本 -->
@@ -3059,7 +3197,9 @@
     const ft = $("#finToggle"); if (ft) ft.onclick = finToggle;
     const finCta = $("#finCta"); if (finCta) finCta.onclick = () => quickTxnModal();
     const af = $("#addFriv"); if (af) af.onclick = addFriv;
+    const ab = $("#addBill"); if (ab) ab.onclick = addBill;
     renderFrivList();
+    renderBillList();
     renderFundLists();
     animateNumbers($("#body-finance"));
   }
@@ -3236,7 +3376,9 @@
       return cats.slice().sort((a, b) => (freq[b] || 0) - (freq[a] || 0));
     };
     const accts = () => Object.keys(D.finance.bals);
-    const draw = (type, selCat) => {
+    const tpls = () => (D.finance.templates || []).filter((t) => t && t.name);
+    const draw = (type, selCat, prefill) => {
+      prefill = prefill || {};
       const isT = type === "transfer";
       const cats = isT ? [] : qChips(type);
       let curCat = (selCat && cats.indexOf(selCat) >= 0) ? selCat : cats[0];
@@ -3252,6 +3394,10 @@
           <button class="btn btn-sm ${type === "income" ? "btn-primary" : "btn-ghost"}" data-qt="income" style="flex:1;">📈 收入</button>
           <button class="btn btn-sm ${isT ? "btn-primary" : "btn-ghost"}" data-qt="transfer" style="flex:1;">🔁 转账</button>
         </div>
+        ${tpls().length ? `<div class="card-sub mb-1">常用模板 · 点一下填好</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;" id="qtTpls">
+          ${tpls().map((t, i) => `<button class="flow-btn qt-tpl" data-tpl="${i}" style="padding:6px 12px;font-size:13px;">⭐ ${esc(t.name)}<span class="qt-tpl-x" data-tpldel="${i}" title="删除模板">×</span></button>`).join("")}
+        </div>` : ""}
         <div class="fld mb-2"><label>日期</label><input id="qtDate" type="date" value="${keepDate}"></div>
         ${isT ? `
         <div class="form form-2 mt-2">
@@ -3275,10 +3421,42 @@
           <button class="btn btn-primary" id="qtSaveMore" style="flex:1;">保存并继续</button>
           <button class="btn btn-ghost" id="qtSave" style="flex:1;">保存</button>
         </div>
+        <button class="btn btn-sm btn-ghost w-full mt-1" id="qtTplSave" style="font-size:12px;">⭐ 存为常用模板</button>
         <input type="hidden" id="qtType" value="${type}">
       `;
+      // 模板预填：金额/账户/备注/转账双方
+      if (prefill.amt) $("#qtAmt").value = prefill.amt;
+      if (prefill.note) $("#qtNote").value = prefill.note;
+      if (!isT && prefill.acct && $("#qtAcct")) $("#qtAcct").value = prefill.acct;
+      if (isT) { if (prefill.from && $("#qtFrom")) $("#qtFrom").value = prefill.from; if (prefill.to && $("#qtTo")) $("#qtTo").value = prefill.to; }
       $$("#qtChips [data-qc]").forEach((b) => b.onclick = () => { $$("#qtChips [data-qc]").forEach((x) => x.classList.remove("qt-sel")); b.classList.add("qt-sel"); curCat = b.dataset.qc; });
       $$("#modalBody [data-qt]").forEach((b) => b.onclick = () => draw(b.dataset.qt));
+      // 常用模板：点 chip = 整套填入（类型/分类/金额/账户/备注）；chip 上的 × = 删除模板
+      $$("#qtTpls [data-tpl]").forEach((b) => (b.onclick = (ev) => {
+        if (ev.target && ev.target.dataset && ev.target.dataset.tpldel !== undefined) return; // 点到 × 不填
+        const t = tpls()[+b.dataset.tpl]; if (!t) return;
+        draw(t.type || "expense", t.cat, { amt: t.amt, acct: t.acct, note: t.note, from: t.from, to: t.to });
+        toast("已按模板填好 · " + t.name);
+      }));
+      $$("#qtTpls [data-tpldel]").forEach((x) => (x.onclick = (ev) => {
+        ev.stopPropagation();
+        const i = +x.dataset.tpldel; const t = tpls()[i]; if (!t) return;
+        D.finance.templates = (D.finance.templates || []).filter((y) => y.id !== t.id);
+        save(); toast("已删除模板 · " + t.name); draw(type, curCat);
+      }));
+      // 存为模板：当前表单 → 一条模板（名称取备注，没有就取分类/转账双方）
+      const ts = $("#qtTplSave");
+      if (ts) ts.onclick = () => {
+        const t = $("#qtType").value, amt = +$("#qtAmt").value, note = ($("#qtNote").value || "").trim();
+        if (!(amt > 0)) { toast("先填金额再存模板", "warn"); return; }
+        const name = note || (t === "transfer" ? ($("#qtFrom").value + "→" + $("#qtTo").value) : curCat) || "模板";
+        const tpl = { id: newTxnId(), name, type: t, amt, note, ts: Date.now() };
+        if (t === "transfer") { tpl.from = $("#qtFrom").value; tpl.to = $("#qtTo").value; }
+        else { tpl.cat = curCat; tpl.acct = $("#qtAcct").value; }
+        if (!D.finance.templates) D.finance.templates = [];
+        D.finance.templates.push(tpl); save();
+        toast("已存为模板 · " + name); draw(type, curCat);
+      };
       // 分类区「+」：新增后回到快速记账，并自动选中刚加的分类
       const qac = $("#qtAddCat");
       if (qac) qac.onclick = () => addCatQuick(type, (n) => { openModal("💎 快速记账", ""); draw(type, n); });
