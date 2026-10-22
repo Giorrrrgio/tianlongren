@@ -462,6 +462,8 @@
     }
     m.nutrition.drinks = asArr(m.nutrition.drinks, true);
     m.nutrition.trendDays = asNum(m.nutrition.trendDays) || 30;
+    if (m.nutrition.trendDays === 365) m.nutrition.trendDays = 90; // 趋势 tab 年(365) → 季(90)
+    if (m.nutrition.weightGoal != null) m.nutrition.weightGoal = asNum(m.nutrition.weightGoal);
     // finance
     m.finance = asObj(m.finance);
     m.finance.txns = asArr(m.finance.txns, true);
@@ -803,6 +805,7 @@
     const { ctx, w, h } = setupCanvas(cv, opt.h || 220);
     const pad = { l: 44, r: 14, t: 18, b: 28 }; const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
     const all = series.flatMap((s) => s.data.filter((v) => v != null));
+    if (opt.goal != null && isFinite(opt.goal)) all.push(opt.goal); // 目标线参与量程，保证可见
     const min = opt.min != null ? opt.min : Math.min(...all, 0);
     const max = opt.max != null ? opt.max : Math.max(...all);
     const span = max - min || 1;
@@ -811,6 +814,18 @@
     const ct = chartTheme();
     ctx.font = "11px sans-serif"; ctx.strokeStyle = ct.grid; ctx.lineWidth = 1;
     for (let g = 0; g <= 3; g++) { const yy = pad.t + (ch * g) / 3; const val = min + (span * (3 - g)) / 3; ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(w - pad.r, yy); ctx.stroke(); ctx.fillStyle = ct.text; ctx.textAlign = "right"; ctx.fillText(opt.fmtY ? opt.fmtY(val) : Math.round(val), pad.l - 6, yy + 4); }
+    // 目标线：虚线 + 右端小标签（体重目标等）
+    if (opt.goal != null && isFinite(opt.goal) && opt.goal >= min && opt.goal <= max) {
+      const gy = yAt(opt.goal);
+      ctx.save();
+      ctx.setLineDash([5, 4]); ctx.strokeStyle = opt.goalColor || "#f59e0b"; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(w - pad.r, gy); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = opt.goalColor || "#f59e0b"; ctx.textAlign = "left";
+      ctx.font = "800 10px sans-serif";
+      ctx.fillText(opt.goalLabel || ("目标 " + opt.goal), pad.l + 4, gy - 4);
+      ctx.restore();
+    }
     series.forEach((s) => {
       const pts = s.data.map((v, i) => ({ x: xAt(i, s.data.length), y: v == null ? null : yAt(v), v }));
       if (s.fill) { ctx.beginPath(); let started = false; pts.forEach((p) => { if (p.y == null) return; started ? ctx.lineTo(p.x, p.y) : (ctx.moveTo(p.x, p.y), started = true); }); if (started) { ctx.lineTo(pts[pts.length - 1].x, pad.t + ch); ctx.lineTo(pts[0].x, pad.t + ch); ctx.closePath(); ctx.fillStyle = s.fill; ctx.fill(); } }
@@ -1099,6 +1114,12 @@
   if (typeof window !== "undefined") { window.__parseBodyText = parseBodyText; }
 
   /* ============ 渲染：总览 ============ */
+  /* 小环（今日一屏用）：36px SVG 进度环，中心放数值 */
+  function miniRing(pct, color, centerText) {
+    const R = 15, C = 2 * Math.PI * R;
+    const p = clamp(pct, 0, 1);
+    return `<svg viewBox="0 0 36 36" class="mini-ring"><circle cx="18" cy="18" r="${R}" fill="none" stroke="var(--line)" stroke-width="4"></circle><circle cx="18" cy="18" r="${R}" fill="none" stroke="${color}" stroke-width="4" stroke-linecap="round" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${(C * (1 - p)).toFixed(1)}" transform="rotate(-90 18 18)"></circle><text x="18" y="18" text-anchor="middle" dominant-baseline="central" class="mini-ring-t">${centerText}</text></svg>`;
+  }
   function renderOverview() {
     finApplyClass();
     const t = effectiveToday();  // 使用"有效今天"（凌晨 3 点前算昨天）
@@ -1116,6 +1137,22 @@
     };
     const fdN = Object.values(fd).filter(Boolean).length;
     const nw = netWorth(); const ms = monthSummary(cmk());
+    /* 今日一屏数据：待办进度 / 打卡段次（含漏打卡警示）/ 由上方饮水与热量卡共用 */
+    const todos0 = D.profile.todos || [];
+    const doneN0 = todos0.filter((x) => x.done).length;
+    const tmToday = ((D.punch || {})[t] || {}).times || {};
+    const punchedN = PUNCH_STEPS.filter((s) => tmToday[s.key]).length;
+    const wdToday = new Date().getDay(); const isWeToday = wdToday === 0 || wdToday === 6;
+    let punchSub = "✅ 四段已打全", punchMiss = false;
+    if (punchedN < 4) {
+      if (isWeToday) punchSub = "周末 · 打了算加班";
+      else {
+        const next = PUNCH_STEPS.find((s) => !tmToday[s.key]);
+        const nmNow = new Date().getHours() * 60 + new Date().getMinutes();
+        if (nmNow >= toMin(next.win)) { punchSub = "⚠️ 该打「" + next.label + "」了"; punchMiss = true; }
+        else punchSub = "下一段 " + next.label + " " + next.win;
+      }
+    }
 
     const wArr = (D.nutrition.weight || []).slice().sort((a, b) => a.date.localeCompare(b.date));
     const lw = wArr.length ? wArr[wArr.length - 1] : null;
@@ -1157,6 +1194,30 @@
           <button class="flow-btn ${fd.punchIn ? "done" : ""}" data-q="punchIn">🕗 打卡${fd.punchIn ? " ✓" : ""}</button>
           <button class="flow-btn ${fd.water ? "done" : ""}" data-q="water">🥃 喝水${fd.water ? " ✓" : ""}</button>
         </div>
+      </div>
+
+      <!-- 今日一屏：待办 / 打卡 / 饮水小环 / 热量小环，一眼看全今天 -->
+      <div class="card mt-3">
+        <div class="card-head"><div class="card-title">⚡ 今日一屏</div><span class="card-sub">待办 · 打卡 · 饮水 · 热量</span></div>
+        <div class="ov-quad">
+          <div class="ov-q">
+            <div class="ov-q-h"><span>📋 待办</span><b>${doneN0}/${todos0.length}</b></div>
+            <div class="ov-q-s">${todos0.length === 0 ? "还没有待办" : doneN0 === todos0.length ? "全部完成 🎉" : "还剩 " + (todos0.length - doneN0) + " 件"}</div>
+          </div>
+          <div class="ov-q ${punchMiss ? "warn" : ""}" data-nav="punch">
+            <div class="ov-q-h"><span>🕗 打卡</span><b class="${punchMiss ? "tw" : ""}">${punchedN}/4</b></div>
+            <div class="ov-q-s ${punchMiss ? "tw" : ""}">${punchSub}</div>
+          </div>
+          <div class="ov-q" data-nav="water">
+            <div class="ov-q-h"><span>🥃 饮水</span>${miniRing(clamp(water / 2000, 0, 1), "#3b82f6", fmt(water))}</div>
+            <div class="ov-q-s">/ 2000 ml</div>
+          </div>
+          <div class="ov-q" data-nav="nutrition">
+            <div class="ov-q-h"><span>🔥 热量</span>${miniRing(calPct, inT.calories > tg.calories ? "#f43f5e" : "#10b981", Math.round(inT.calories))}</div>
+            <div class="ov-q-s">${inT.calories > tg.calories ? "已超 " + (inT.calories - tg.calories) + " kcal" : "剩 " + Math.max(0, tg.calories - inT.calories) + " kcal"}</div>
+          </div>
+        </div>
+        <button class="btn btn-ghost w-full mt-2" id="wkReportBtn" style="font-size:13px;">📊 生成本周健康快报 · 长图可分享</button>
       </div>
 
       <!-- 今日待办 -->
@@ -1210,6 +1271,7 @@
       </div>`;
 
     $$("#body-overview [data-nav]").forEach((b) => (b.onclick = () => navigate(b.dataset.nav)));
+    const wkBtn = $("#wkReportBtn"); if (wkBtn) wkBtn.onclick = () => exportWeeklyReport();
     $$("#body-overview [data-finlock]").forEach((b) => (b.onclick = (e) => { e.stopPropagation(); finToggle(); }));
 
     $$("#body-overview [data-q]").forEach((b) => (b.onclick = () => {
@@ -1263,6 +1325,122 @@
         timeEl.innerHTML = h + ":" + m + ':<span class="sec">' + s + "</span>";
       }
     }
+  }
+  /* ============ 每周健康快报（数据聚合 +  Canvas 长图导出） ============ */
+  function weeklyReport(now) {
+    now = now || new Date();
+    const days = [];
+    for (let i = 6; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i); days.push(dstr(d)); }
+    const seg = (tm, a, b) => { const x = toMin(tm[a]), y = toMin(tm[b]); return (x != null && y != null && y > x) ? y - x : 0; };
+    let workMins = 0, fullDays = 0, punchDays = 0;
+    days.forEach((ds) => {
+      const tm = ((D.punch || {})[ds] || {}).times || {};
+      if (Object.keys(tm).length > 0) punchDays++;
+      const m = seg(tm, "amIn", "amOut") + seg(tm, "pmIn", "pmOut");
+      if (m > 0) { workMins += m; fullDays++; }
+    });
+    let calSum = 0, calDays = 0, cSum = 0, pSum = 0, fSum = 0;
+    days.forEach((ds) => {
+      const day = (D.nutrition.daily || {})[ds] || {};
+      let dc = 0, dp = 0, df = 0, dcal = 0;
+      for (const mk of ["breakfast", "lunch", "dinner", "snack"]) for (const it of (day[mk] || [])) { dc += +it.carbs || 0; dp += +it.protein || 0; df += +it.fat || 0; dcal += +it.calories || 0; }
+      if (dcal > 0 || dc + dp + df > 0) { calSum += dcal; cSum += dc; pSum += dp; fSum += df; calDays++; }
+    });
+    let wSum = 0, wDays = 0, wGoalDays = 0;
+    days.forEach((ds) => { const w = ((D.nutrition.water || {})[ds] || {}).water || 0; if (w > 0) { wSum += w; wDays++; if (w >= 2000) wGoalDays++; } });
+    const wArr = (D.nutrition.weight || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+    const inRange = wArr.filter((r) => r.date >= days[0] && r.date <= days[6]);
+    const before = wArr.filter((r) => r.date < days[0]).pop() || null;
+    const wStart = inRange[0] || before || null;
+    const wEnd = inRange.length ? inRange[inRange.length - 1] : before;
+    return {
+      range: days[0].slice(5).replace("-", "/") + "–" + days[6].slice(5).replace("-", "/"),
+      days, punchDays, workMins, avgWorkMins: fullDays ? Math.round(workMins / fullDays) : 0,
+      calDays, avgCal: calDays ? Math.round(calSum / calDays) : 0,
+      avgC: calDays ? Math.round(cSum / calDays) : 0, avgP: calDays ? Math.round(pSum / calDays) : 0, avgF: calDays ? Math.round(fSum / calDays) : 0,
+      wDays, avgWater: wDays ? Math.round(wSum / wDays) : 0, wGoalDays,
+      wStart: wStart ? wStart.weight : null, wEnd: wEnd ? wEnd.weight : null,
+    };
+  }
+  function rr(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+  }
+  function exportWeeklyReport() {
+    let st;
+    try { st = weeklyReport(); } catch (e) { toast("周报生成失败", "warn"); return; }
+    const W = 750, H = 1160;
+    const cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    const ctx = cv.getContext("2d");
+    if (!ctx) { toast("当前环境不支持导出图片", "warn"); return; }
+    const INK = "#1e293b", SUB = "#64748b", LINE = "#e2e8f0";
+    ctx.fillStyle = "#f1f5f9"; ctx.fillRect(0, 0, W, H);
+    // 头部
+    const grad = ctx.createLinearGradient(0, 0, W, 0);
+    grad.addColorStop(0, "#059669"); grad.addColorStop(1, "#34d399");
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, W, 200);
+    ctx.fillStyle = "rgba(255,255,255,.92)"; ctx.font = "800 40px sans-serif"; ctx.textAlign = "left";
+    ctx.fillText("每周健康快报", 40, 82);
+    ctx.font = "600 24px sans-serif"; ctx.fillStyle = "rgba(255,255,255,.85)";
+    ctx.fillText(st.range + " · " + (D.profile.name || "天龙人"), 40, 126);
+    ctx.font = "400 20px sans-serif"; ctx.fillStyle = "rgba(255,255,255,.7)";
+    ctx.fillText("打卡 · 饮食 · 饮水 · 体重 一周回顾", 40, 162);
+    // 四联大卡
+    const cards = [
+      { t: "出勤打卡", v: st.punchDays + "/7", s: "天有记录 · 工时 " + Math.floor(st.workMins / 60) + "h" + (st.workMins % 60) + "m", c: "#10b981" },
+      { t: "日均热量", v: st.avgCal ? String(st.avgCal) : "—", s: st.calDays ? st.calDays + " 天有饮食记录" : "本周没记餐", c: "#f59e0b" },
+      { t: "日均饮水", v: st.avgWater ? st.avgWater + "" : "—", s: st.wGoalDays + " 天达到 2000ml", c: "#3b82f6" },
+      { t: "体重变化", v: (st.wStart != null && st.wEnd != null) ? (st.wEnd - st.wStart === 0 ? "0" : (st.wEnd - st.wStart > 0 ? "+" : "") + (st.wEnd - st.wStart).toFixed(1)) : "—", s: (st.wStart != null && st.wEnd != null) ? st.wStart + "kg → " + st.wEnd + "kg" : "本周没称重", c: "#8b5cf6" },
+    ];
+    cards.forEach((cd, i) => {
+      const cx = 40 + (i % 2) * 350, cy = 236 + Math.floor(i / 2) * 180;
+      ctx.fillStyle = "#ffffff"; rr(ctx, cx, cy, 320, 156, 20); ctx.fill();
+      ctx.strokeStyle = LINE; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.fillStyle = SUB; ctx.font = "600 21px sans-serif"; ctx.fillText(cd.t, cx + 24, cy + 42);
+      ctx.fillStyle = cd.c; ctx.font = "800 46px sans-serif"; ctx.fillText(cd.v, cx + 24, cy + 100);
+      ctx.fillStyle = SUB; ctx.font = "400 19px sans-serif"; ctx.fillText(cd.s, cx + 24, cy + 134);
+    });
+    // 三大素
+    ctx.fillStyle = "#ffffff"; rr(ctx, 40, 606, 670, 170, 20); ctx.fill();
+    ctx.strokeStyle = LINE; ctx.stroke();
+    ctx.fillStyle = SUB; ctx.font = "600 21px sans-serif"; ctx.fillText("三大营养素 · 日均", 64, 646);
+    const macros = [["碳水", st.avgC, "#10b981"], ["蛋白质", st.avgP, "#f43f5e"], ["脂肪", st.avgF, "#f59e0b"]];
+    macros.forEach((m, i) => {
+      const mx = 64 + i * 210;
+      ctx.fillStyle = m[2]; rr(ctx, mx, 676, 22, 22, 7); ctx.fill();
+      ctx.fillStyle = INK; ctx.font = "800 34px sans-serif"; ctx.fillText(m[1] + "g", mx + 34, 700);
+      ctx.fillStyle = SUB; ctx.font = "400 19px sans-serif"; ctx.fillText(m[0], mx + 34, 728);
+    });
+    // 每日打卡小条
+    ctx.fillStyle = "#ffffff"; rr(ctx, 40, 796, 670, 190, 20); ctx.fill();
+    ctx.strokeStyle = LINE; ctx.stroke();
+    ctx.fillStyle = SUB; ctx.font = "600 21px sans-serif"; ctx.fillText("每日在岗时长", 64, 836);
+    const stt = weekWorkStats();
+    const maxM = Math.max(240, ...stt.days.map((x) => x.mins));
+    stt.days.forEach((d, i) => {
+      const bx = 76 + i * 88, bw = 44, bh = d.mins > 0 ? Math.max(6, Math.round((d.mins / maxM) * 84)) : 4;
+      ctx.fillStyle = d.mins > 0 ? (d.weekend ? "#a7f3d0" : "#10b981") : "#e2e8f0";
+      rr(ctx, bx, 952 - bh, bw, bh, 6); ctx.fill();
+      ctx.fillStyle = SUB; ctx.font = "400 18px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText(["日", "一", "二", "三", "四", "五", "六"][new Date(d.date).getDay()], bx + bw / 2, 978);
+      ctx.textAlign = "left";
+    });
+    // 页脚
+    ctx.fillStyle = SUB; ctx.font = "400 18px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("数据来自本机存档 · " + new Date().toLocaleDateString("zh-CN") + " 生成", W / 2, 1046);
+    ctx.fillText("天天长数据，周周有回顾 💪", W / 2, 1082);
+    // 导出下载
+    try {
+      const a = document.createElement("a");
+      a.download = "天龙人周报_" + st.range.replace(/[\/–]/g, "") + ".png";
+      a.href = cv.toDataURL("image/png");
+      document.body.appendChild(a); a.click(); a.remove();
+      toast("周报长图已保存 · 去下载里分享吧");
+    } catch (e) { toast("导出失败：" + e.message, "warn"); }
   }
   function quickWeightModal() {
     openModal("记录体重", `
@@ -2145,7 +2323,7 @@
   if (typeof window !== "undefined") window.__parseMultiMealText = parseMultiMealText;
 
   if (typeof window !== "undefined") window.__parseNutritionText = parseNutritionText;
-  if (typeof window !== "undefined") window.__TLR = { get D() { return D; }, normalize, unwrapSave };
+  if (typeof window !== "undefined") window.__TLR = { get D() { return D; }, normalize, unwrapSave, weeklyReport, weekWorkStats, exportWeeklyReport };
 
   // 一键记一餐：弹窗选餐次 → 进入添加餐食弹窗（addMealModal 记入 curMealDate，可补登历史日期）
   function quickMealModal() {
@@ -2464,6 +2642,21 @@
           <div class="stat"><div class="stat-label">💪 肌肉量</div><div class="stat-value">${lw ? (musMass(lw) != null ? musMass(lw) : "--") : "--"}<span class="unit"> kg</span></div><div class="stat-foot">肌肉率 ${lw ? lw.muscleRate : "--"}% · 较上次 ${upDown(lw && musMass(lw), prev && musMass(prev))}</div></div>
           <div class="stat"><div class="stat-label">💧 体水份量</div><div class="stat-value">${lw && lw.waterMass != null && lw.waterMass !== "" ? lw.waterMass : "--"}<span class="unit"> kg</span></div><div class="stat-foot">较上次 ${upDown(lw && lw.waterMass, prev && prev.waterMass)}</div></div>
         </div>
+        ${(() => {
+          const g = (D.nutrition.weightGoal != null && isFinite(D.nutrition.weightGoal)) ? D.nutrition.weightGoal : null;
+          let gap = '<span class="w-goal-gap none">设个目标，趋势图上画线追</span>';
+          if (g != null && lw) {
+            const diff = +(g - lw.weight).toFixed(1);
+            if (diff > 0) gap = `<span class="w-goal-gap down">还差 ${diff} kg ↓</span>`;
+            else if (diff < 0) gap = `<span class="w-goal-gap up">已低于目标 ${-diff} kg 🎉</span>`;
+            else gap = `<span class="w-goal-gap ok">🎉 正好达标</span>`;
+          } else if (g != null) gap = `<span class="w-goal-gap none">还没有体重记录</span>`;
+          return `<div class="w-goal-row">
+            <span class="w-goal-l">🎯 目标体重</span>
+            <input type="number" id="wGoalInput" step="0.1" min="30" max="200" value="${g != null ? g : ""}" placeholder="未设置">
+            ${gap}
+          </div>`;
+        })()}
       </div>
 
       <!-- 看板2：记录体重 / 体脂 / 肌肉 / 体水份量 -->
@@ -2485,7 +2678,7 @@
           <div class="trend-tabs" id="bodyTrendTabs">
             <button class="trend-tab ${D.nutrition.trendDays === 7 ? "active" : ""}" data-days="7">周</button>
             <button class="trend-tab ${D.nutrition.trendDays === 30 ? "active" : ""}" data-days="30">月</button>
-            <button class="trend-tab ${D.nutrition.trendDays === 365 ? "active" : ""}" data-days="365">年</button>
+            <button class="trend-tab ${D.nutrition.trendDays === 90 ? "active" : ""}" data-days="90">季</button>
           </div>
         </div>
         <div class="trend-grid trend-grid-4">
@@ -2585,22 +2778,34 @@
       });
     }
     renderWeightHist();
+    // 目标体重：清空=删除目标；填值=趋势图画虚线追
+    const wg = $("#wGoalInput");
+    if (wg) wg.onchange = () => {
+      const v = parseFloat(wg.value);
+      if (isNaN(v) || v <= 0) { delete D.nutrition.weightGoal; save(); renderWeight(); toast("已清除体重目标"); return; }
+      D.nutrition.weightGoal = Math.round(v * 10) / 10;
+      save(); renderWeight();
+      const diff = lw ? +(D.nutrition.weightGoal - lw.weight).toFixed(1) : null;
+      toast(diff == null ? "目标已设置 · " + D.nutrition.weightGoal + "kg" : (diff > 0 ? `目标 ${D.nutrition.weightGoal}kg · 还差 ${diff} kg` : diff < 0 ? `目标 ${D.nutrition.weightGoal}kg · 已低于目标 ${-diff} kg 🎉` : "目标已设置 · 正好达标 🎉"));
+    };
     $$("#bodyTrendTabs .trend-tab").forEach((b) => b.onclick = () => { D.nutrition.trendDays = +b.dataset.days; save(); renderWeight(); });
 
     const td = bodyTrendData(D.nutrition.trendDays || 7);
-    const drawTrend = (sel, vals, color) => {
+    const goalKg = (D.nutrition.weightGoal != null && isFinite(D.nutrition.weightGoal)) ? D.nutrition.weightGoal : null;
+    const drawTrend = (sel, vals, color, goal) => {
       const c = $(sel); if (!c) return;
       const has = vals.filter((v) => v != null).length;
       if (has) {
-        const nums = vals.filter((v) => v != null);
+        let nums = vals.filter((v) => v != null);
+        if (goal != null) nums = nums.concat([goal]); // 目标值参与量程
         const mn = Math.min(...nums), mx = Math.max(...nums);
         const pad = (mx - mn) * 0.25 || 1;
-        drawLine(c, [{ data: vals, labels: td.labels, color, fill: color + "14" }], { min: Math.floor(mn - pad), max: Math.ceil(mx + pad), h: 170 });
+        drawLine(c, [{ data: vals, labels: td.labels, color, fill: color + "14" }], { min: Math.floor(mn - pad), max: Math.ceil(mx + pad), h: 170, goal, goalLabel: goal != null ? "目标 " + goal + "kg" : "" });
       } else {
         const { ctx, w, h } = setupCanvas(c, 170); const ct = chartTheme(); ctx.fillStyle = ct.text; ctx.textAlign = "center"; ctx.fillText("暂无数据", w / 2, h / 2);
       }
     };
-    drawTrend("#bodyTrendWeight", td.weight, "#10b981");
+    drawTrend("#bodyTrendWeight", td.weight, "#10b981", goalKg);
     drawTrend("#bodyTrendFat", td.fat, "#f43f5e");
     drawTrend("#bodyTrendMuscle", td.muscle, "#3b82f6");
     drawTrend("#bodyTrendWater", td.water, "#06b6d4");
@@ -3867,6 +4072,56 @@
     toast("已按时间识别 · " + st.label + " " + now);
     celebratePunch(t, "#punchCta"); // 四卡打全 → 撒花 + 连续天数/破纪录
   }
+  /* ============ 本周工时统计（周一~周日） ============ */
+  function weekWorkStats(now) {
+    now = now || new Date();
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const wd = (d.getDay() + 6) % 7; // 周一=0
+    const monday = new Date(d); monday.setDate(d.getDate() - wd);
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const dd = new Date(monday); dd.setDate(monday.getDate() + i);
+      const ds = dstr(dd);
+      const tm = ((D.punch || {})[ds] || {}).times || {};
+      const seg = (a, b) => { const x = toMin(tm[a]), y = toMin(tm[b]); return (x != null && y != null && y > x) ? y - x : 0; };
+      const mins = seg("amIn", "amOut") + seg("pmIn", "pmOut");
+      const isWe = dd.getDay() === 0 || dd.getDay() === 6;
+      days.push({ date: ds, mins, weekend: isWe, future: dd > d, today: ds === dstr(d) });
+    }
+    const total = days.reduce((s, x) => s + x.mins, 0);
+    const worked = days.filter((x) => x.mins > 0).length;
+    const elapsedWorkdays = days.filter((x) => !x.weekend && !x.future).length;
+    return { days, total, worked, elapsedWorkdays };
+  }
+  function fmtHM(mins) {
+    const h = Math.floor(mins / 60), m = Math.round(mins % 60);
+    return h > 0 ? `${h}<span class="wk-h-unit">小时</span>${m ? `<span class="wk-h-min">${m}分</span>` : ""}` : `${m}<span class="wk-h-unit">分钟</span>`;
+  }
+  function weekHoursCard() {
+    const st = weekWorkStats();
+    const maxM = Math.max(240, ...st.days.map((x) => x.mins)); // 至少按 4 小时做满高，短周也有柱子看
+    const bars = st.days.map((x) => {
+      const hPct = x.mins > 0 ? Math.max(6, Math.round((x.mins / maxM) * 100)) : 0;
+      const wd = new Date(x.date).getDay();
+      const lb = ["日", "一", "二", "三", "四", "五", "六"][wd];
+      return `<div class="wk-bar-col ${x.weekend ? "we" : ""} ${x.today ? "today" : ""} ${x.future ? "future" : ""}">
+        <div class="wk-bar ${x.mins > 0 ? "has" : ""}" style="height:${hPct}%" title="${x.date}${x.mins ? " · " + Math.floor(x.mins / 60) + "h" + (x.mins % 60) + "m" : ""}"></div>
+        <div class="wk-bar-lb">${lb}</div>
+      </div>`;
+    }).join("");
+    const avg = st.worked > 0 ? Math.round(st.total / st.worked) : 0;
+    return `<div class="card mt-3">
+      <div class="card-head"><div class="card-title">本周工时</div><span class="card-sub">周一~周日 · 实际在岗（扣午休）</span></div>
+      <div class="wk-hours">
+        <div class="wk-h-num">${fmtHM(st.total)}</div>
+        <div class="wk-h-side">
+          <div>出勤 <b>${st.worked}/${st.elapsedWorkdays}</b> 天</div>
+          <div>日均 <b>${avg ? (avg / 60).toFixed(1) : "0"}</b> 小时</div>
+        </div>
+      </div>
+      <div class="wk-bars">${bars}</div>
+    </div>`;
+  }
   /* ============ 庆祝动效：彩纸冲刺 + 打卡里程碑 ============ */
   function confettiBurst(sel) {
     try {
@@ -4002,6 +4257,7 @@
         <div class="prows">${rows}</div>
         <div class="punch-foot" style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><span>手动填写实际时间，或点「现在」记录当前时刻；系统按建议时间判断 准时 / 迟到 / 早退 / 加班。</span><button class="btn btn-sm btn-ghost" data-clear="1">清空今日</button></div>
       </div>
+      ${weekHoursCard()}
       <div class="card mt-3">
         <div class="card-head"><div class="card-title">近期打卡</div></div>
         <div class="punch-hist">${hist}</div>
