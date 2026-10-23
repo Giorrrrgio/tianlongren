@@ -1511,7 +1511,7 @@
   // preKey：smartPunch 传入的预选段（已打过自动带入 / 确定区间但需确认时）
   function punchModal(preKey) {
     const t = effectiveToday(); const tm = (punchRec(t).times) || {};
-    // 自动识别当前时段：确定区间直接预选（用户只需确认或改时间），空隙时段留空手选
+    // 自动识别当前时段直接预选（用户只需确认或改时间）；无预选时留空手选
     let sel = preKey || smartPunchKey() || null;
     const autoKey = !!sel && smartPunchKey() === sel; // 这拨预选是「按时间自动识别」出来的
     const segs = PUNCH_STEPS.map((s) => `<button class="pseg${sel === s.key ? " active" : ""}" data-seg="${s.key}"><div class="pseg-ic">${s.emoji}</div><div class="pseg-l">${s.label}</div><div class="pseg-t">${tm[s.key] || "未打卡"}</div></button>`).join("");
@@ -4039,26 +4039,26 @@
   ];
   function punchRec(ds) { D.punch = D.punch || {}; return D.punch[ds] || (D.punch[ds] = { times: {}, ot: 0 }); }
   /* 一键打卡智能识别：按当前时间自动判断该打哪张卡。
-   * 用户规则（2026-10-20）：
-   *   08:15 之前        → 上午上班卡（amIn）
-   *   12:00–13:00       → 上午下班卡（amOut）
-   *   13:00–14:00       → 下午上班卡（pmIn）
-   *   17:00 之后        → 傍晚下班卡（pmOut）
-   * 空隙时段（08:15–12:00 / 14:00–17:00）不做猜测——返回 null，弹窗手动选。
-   * 边界按「分钟」比较：08:14:59 也算早于 08:15。 */
+   * 用户规则（2026-10-23 改版，依据用户习惯：可能迟到，但绝不提早下班）：
+   *   12:15 之前        → 上午上班卡（amIn）   （睡过头/迟到都记上班卡）
+   *   12:15–13:30       → 上午下班卡（amOut）  （不会早于饭点下班）
+   *   13:30–17:00       → 下午上班卡（pmIn）   （下午开工，不会早退）
+   *   17:00 及以后      → 傍晚下班卡（pmOut）  （只可能迟下班）
+   * 全天无空隙时段：任何时刻点一下都直接记卡；只有「该卡今天已打过」时
+   * 才弹窗预选原值待确认（不静默覆盖）。边界与 PUNCH_STEPS.win 完全对齐。
+   * 边界按「分钟」比较：12:14:59 算上午上班，12:15:00 算上午下班。 */
   function smartPunchKey(d) {
     d = d || new Date();
     const mins = d.getHours() * 60 + d.getMinutes();
-    if (mins < 8 * 60 + 15) return "amIn";              // 早于 08:15
-    if (mins >= 12 * 60 && mins < 13 * 60) return "amOut"; // 12:00–12:59
-    if (mins >= 13 * 60 && mins < 14 * 60) return "pmIn";  // 13:00–13:59
-    if (mins >= 17 * 60) return "pmOut";                // 17:00 及以后
-    return null;                                        // 空隙时段不猜
+    if (mins < 12 * 60 + 15) return "amIn";    // 12:15 之前 → 上午上班（可能迟到）
+    if (mins < 13 * 60 + 30) return "amOut";   // 12:15–13:30 → 上午下班（不早退）
+    if (mins < 17 * 60) return "pmIn";         // 13:30–17:00 → 下午上班（不早退）
+    return "pmOut";                            // 17:00 及以后 → 傍晚下班（可能迟下班）
   }
   /* 一键打卡（总览「🕗 打卡」/ 打卡页「打个卡」的统一入口）：
-   * 时间落在确定区间 → 直接记当前时刻（toast 说明识别结果）；
-   * 该卡今天已打过 → 不静默覆盖，弹窗预选该段让人确认；
-   * 空隙时段 → 弹窗手动选（保留选择权）。 */
+   * 全天四个区间都确定 → 直接记当前时刻（toast 说明识别结果）；
+   * 该卡今天已打过 → 不静默覆盖，弹窗预选该段让人确认（可改时间/改段补卡）。
+   * 注：smartPunchKey 现恒有值（无空隙时段），!key 分支仅为防御性保留。 */
   function smartPunch() {
     const t = effectiveToday();
     const key = smartPunchKey();
@@ -4250,7 +4250,7 @@
       return `<div class="row"><div class="row-main"><div class="row-title">${k.slice(5)}</div><div class="row-meta">${parts}</div></div><span class="tag ${we ? "tag-amber" : "tag-gray"}">${we ? "周末" : "工作日"}</span></div>`;
     }).join("") : emptyState('📋', '还没有打卡记录', '开始记录你的每日打卡吧', null, null);
     $("#body-punch").innerHTML = `
-      <button class="page-cta" id="punchCta"><span class="pc-emoji">🕐</span>打个卡<span class="pc-hint">选时段 · 记当前时刻</span></button>
+      <button class="page-cta" id="punchCta"><span class="pc-emoji">🕐</span>打个卡<span class="pc-hint">自动识别 · 记当前时刻</span></button>
       <div class="card">
         <div class="card-head"><div class="card-title">上下班打卡</div><span class="card-sub">${t} 周${WK[wd]}${weekend ? " · 周末" : ""}</span></div>
         <div class="punch-banner ${weekend ? "we" : ""}">${banner}</div>
