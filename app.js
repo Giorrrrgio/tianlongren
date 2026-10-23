@@ -2350,6 +2350,16 @@
     return `<div class="card-sub mt-3">常吃 · 最近 7 天${MEALS.find((x) => x.k === mealKey) ? "的" + MEALS.find((x) => x.k === mealKey).name : ""}</div>
       <div class="fav-chips mt-1" id="favChips">${fav.map((e, i) => `<button class="fav-chip" data-fav="${i}" title="点击直接填入">${esc(e.it.name)}${e.n > 1 ? '<span class="fav-n">×' + e.n + "</span>" : ""}</button>`).join("")}</div>`;
   }
+  /* 常用补剂固定快捷键（仅加餐提供）：参数按包装标注写死，点一下整套填入 */
+  const SUPPLEMENT_PRESETS = [
+    { name: "鱼油2粒", calories: 20, carbs: 0, protein: 0, fat: 2.2, cholesterol: 12, purine: 0 },
+    { name: "蛋白粉36g", calories: 153, carbs: 0.79, protein: 29.34, fat: 3.46, cholesterol: 0, purine: 62 },
+  ];
+  function presetChipsHtml(mealKey) {
+    if (mealKey !== "snack" || !SUPPLEMENT_PRESETS.length) return "";
+    return `<div class="card-sub mt-3">常用补剂 · 点一下填入</div>
+      <div class="fav-chips mt-1" id="presetChips">${SUPPLEMENT_PRESETS.map((r, i) => `<button class="fav-chip" data-preset="${i}" title="点击直接填入">${esc(r.name)}</button>`).join("")}</div>`;
+  }
   function addMealModal(mealKey) {
     const m = MEALS.find((x) => x.k === mealKey);
     const md = curMealDate || effectiveToday();
@@ -2358,6 +2368,7 @@
       <div class="card-sub mb-2">粘贴餐食描述自动识别，或手动填写营养：</div>
       <div class="fld full"><label>智能识别</label><textarea id="smart" placeholder="粘贴豆包等营养素分析，自动识别：辣椒炒肉50g… 总热量：814 碳水：45.2 蛋白质：38.1 脂肪：22.4 胆固醇：210 嘌呤：180"></textarea></div>
       <button class="btn btn-sm" id="pasteBtn">📋 粘贴并识别</button>
+      ${presetChipsHtml(mealKey)}
       ${favChipsHtml(mealKey, md)}
       <div class="form form-2 mt-2">
         <div class="fld"><label>名称</label><input id="mName" placeholder="吃了什么"></div>
@@ -2446,10 +2457,8 @@
         toast("无法读取剪贴板，请长按输入框手动粘贴后再点本按钮", "warn");
       }
     };
-    // 常吃 chips：点一下把整条历史记录（名称+全部营养）填进表单，改改数量就能存
-    $$("#modalBody [data-fav]").forEach((b) => (b.onclick = () => {
-      const e = fav[+b.dataset.fav]; if (!e) return;
-      const r = e.it;
+    //  chips 共用：把一条记录（名称+全部营养）填进表单，改改数量就能存
+    const fillMealForm = (r) => {
       $("#mName").value = r.name;
       $("#mCal").value = r.calories || 0;
       $("#mC").value = r.carbs || 0;
@@ -2457,6 +2466,17 @@
       $("#mF").value = r.fat || 0;
       $("#mCh").value = r.cholesterol || 0;
       $("#mPu").value = r.purine || 0;
+    };
+    // 常用补剂固定快捷键（加餐）：鱼油/蛋白粉按包装参数整套填入
+    $$("#modalBody [data-preset]").forEach((b) => (b.onclick = () => {
+      const r = SUPPLEMENT_PRESETS[+b.dataset.preset]; if (!r) return;
+      fillMealForm(r);
+      toast("已填入补剂 · 可手动改后保存");
+    }));
+    // 常吃 chips：点一下把整条历史记录（名称+全部营养）填进表单，改改数量就能存
+    $$("#modalBody [data-fav]").forEach((b) => (b.onclick = () => {
+      const e = fav[+b.dataset.fav]; if (!e) return;
+      fillMealForm(e.it);
       toast("已填入常吃 · 可手动改后保存");
     }));
     $("#mSubmit").onclick = () => {
