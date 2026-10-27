@@ -506,7 +506,18 @@
     m.frivolous.items = asArr(m.frivolous.items, true);
     // 还款日 / 记账模板
     m.finance.bills = asArr(m.finance.bills, true).filter((b) => isObj(b) && b.name);
-    m.finance.bills.forEach((b) => { b.day = Math.min(31, Math.max(1, Math.round(+b.day || 1))); });
+    m.finance.bills.forEach((b) => {
+      b.day = Math.min(31, Math.max(1, Math.round(+b.day || 1)));
+      b.kind = b.kind === "in" ? "in" : "out"; // 入账（钱进来）/ 还款（钱出去）；老数据无此字段按还款
+    });
+    // 月度固定事项一次性预置（2026-10-23）：公积金 13 日入账、社保 28 日扣缴。
+    // billsSeeded 标记保证只自动加一次——用户手动删掉后不会复活。
+    if (!m.finance.billsSeeded) {
+      m.finance.billsSeeded = true;
+      const has = (n) => m.finance.bills.some((b) => b && b.name === n);
+      if (!has("公积金入账")) m.finance.bills.push({ id: "ghjj", name: "公积金入账", day: 13, kind: "in" });
+      if (!has("社保")) m.finance.bills.push({ id: "shebao", name: "社保", day: 28, kind: "out" });
+    }
     m.finance.templates = asArr(m.finance.templates, true).filter((t) => isObj(t) && t.name);
     return m;
   }
@@ -3121,14 +3132,18 @@
     const list = bills().slice().sort((a, b) => (a.day | 0) - (b.day | 0));
     el.innerHTML = list.length
       ? list.map((b) => {
+        const isIn = b.kind === "in";
         const d = nextBillDate(b.day); const left = daysUntil(d);
         const urgent = left <= 3;
-        return `<div class="row"><div class="row-ic" style="background:${urgent ? "#ffe4e6" : "#f1f5f9"};color:${urgent ? "#be1239" : "#64748b"};">💳</div><div class="row-main"><div class="row-title">${esc(b.name)}</div><div class="row-meta">每月 ${b.day} 日 · 下次 ${d.getMonth() + 1}月${d.getDate()}日</div></div><span class="num" style="color:${urgent ? "#be1239" : "var(--ink-3)"};font-weight:800;">${left === 0 ? "今天" : left + " 天"}</span><button class="mi-del" data-delbill="${b.id}" title="删除">×</button></div>`;
+        // 入账走绿（钱进来），还款走红（临近冒 rose）；图标与 meta 标签同步区分
+        const icBg = urgent ? (isIn ? "#d1fae5" : "#ffe4e6") : (isIn ? "#ecfdf5" : "#f1f5f9");
+        const icFg = urgent ? (isIn ? "#047857" : "#be1239") : (isIn ? "#059669" : "#64748b");
+        return `<div class="row"><div class="row-ic" style="background:${icBg};color:${icFg};">${isIn ? "🏦" : "💳"}</div><div class="row-main"><div class="row-title">${esc(b.name)}</div><div class="row-meta">${isIn ? "入账" : "还款"} · 每月 ${b.day} 日 · 下次 ${d.getMonth() + 1}月${d.getDate()}日</div></div><span class="num" style="color:${isIn ? "#059669" : urgent ? "#be1239" : "var(--ink-3)"};font-weight:800;">${left === 0 ? "今天" : left + " 天"}</span><button class="mi-del" data-delbill="${b.id}" title="删除">×</button></div>`;
       }).join("")
-      : `<div class="card-sub">还没设还款日 · 填上面的名称和日期添加</div>`;
+      : `<div class="card-sub">还没设月度事项 · 填上面的名称和日期添加</div>`;
     $$("#billList [data-delbill]").forEach((btn) => (btn.onclick = () => {
       D.finance.bills = bills().filter((x) => x.id !== btn.dataset.delbill);
-      save(); renderBillList(); renderFinance(); toast("已删除该还款日");
+      save(); renderBillList(); renderFinance(); toast("已删除该事项");
     }));
   }
   function addBill() {
@@ -3136,9 +3151,10 @@
     const day = Math.round(+$("#billDay").value || 0);
     if (!name) { toast("先填名称", "warn"); return; }
     if (!(day >= 1 && day <= 31)) { toast("日期填 1-31", "warn"); return; }
-    bills().push({ id: newTxnId(), name, day });
+    const kind = ($("#billKind") || {}).value === "in" ? "in" : "out";
+    bills().push({ id: newTxnId(), name, day, kind });
     save(); $("#billName").value = ""; $("#billDay").value = "";
-    renderBillList(); renderFinance(); toast("已添加 · " + name);
+    renderBillList(); renderFinance(); toast("已添加 · " + name + (kind === "in" ? "（入账）" : ""));
   }
   function renderFinance() {
     const F = D.finance; const nw = netWorth(); const ms = monthSummary(fCurMonth);
@@ -3153,7 +3169,7 @@
 
       <button class="page-cta" id="finCta"><span class="pc-emoji">💵</span>记一笔<span class="pc-hint">支出 · 收入 · 转账</span></button>
 
-      <!-- 资产总览：①发薪日倒计时 → ①b还款紧急提醒 → ②流动资金独立色块 → ③存款独立色块 → 趋势/四格 → 净资产沉到页脚 -->
+      <!-- 资产总览：①发薪日倒计时 → ①b月度紧急提醒（入账绿/还款红） → ②流动资金独立色块 → ③存款独立色块 → 趋势/四格 → 净资产沉到页脚 -->
       <div class="hero-dark">
         <!-- ① 发薪日倒计时：每月 15 日 18:00 -->
         <div class="hd-payday">
@@ -3161,14 +3177,15 @@
           <span class="hd-payday-v">${paydayText()}</span>
         </div>
 
-        <!-- ①b 还款紧急提醒：3 天内到期才冒出来（平时在下方「还款日」卡里管） -->
+        <!-- ①b 月度紧急提醒：3 天内到期才冒出来（入账走绿 / 还款走红；平时在下方「月度固定日」卡里管） -->
         ${(() => {
           const nb = nearestBill();
           if (!nb || nb.left > 3) return "";
           const urgent = nb.left <= 1;
-          return `<div class="hd-bill ${urgent ? "urgent" : ""}">
-            <span class="hd-bill-l">💳 还款提醒</span>
-            <span class="hd-bill-v">${esc(nb.bill.name)} · ${nb.left === 0 ? "<b>今天还款</b>" : "还有 <b>" + nb.left + " 天</b>"} · ${nb.date.getMonth() + 1}月${nb.date.getDate()}日</span>
+          const isIn = nb.bill.kind === "in";
+          return `<div class="hd-bill ${isIn ? "in" : ""} ${urgent ? "urgent" : ""}">
+            <span class="hd-bill-l">${isIn ? "🏦 入账提醒" : "💳 还款提醒"}</span>
+            <span class="hd-bill-v">${esc(nb.bill.name)} · ${nb.left === 0 ? (isIn ? "<b>今天入账</b>" : "<b>今天还款</b>") : "还有 <b>" + nb.left + " 天</b>"} · ${nb.date.getMonth() + 1}月${nb.date.getDate()}日</span>
           </div>`;
         })()}
 
@@ -3266,13 +3283,17 @@
         </div>
       </div>
 
-      <!-- 还款日管理：每月固定日（信用卡/花呗/贷款），3 天内到期时 hero 顶部冒红条 -->
+      <!-- 月度固定日管理：还款（钱出去）/ 入账（钱进来，如公积金），3 天内到期时 hero 顶部冒条（入账绿/还款红） -->
       <div class="card mt-3">
-        <div class="card-head"><div class="card-title">还款日 💳</div><span class="card-sub">每月固定日 · 临近 3 天顶部提醒</span></div>
+        <div class="card-head"><div class="card-title">月度固定日 💴</div><span class="card-sub">还款 · 入账 · 临近 3 天顶部提醒</span></div>
         <div id="billList"></div>
         <div style="display:flex;gap:8px;margin-top:10px;">
-          <input id="billName" placeholder="名称（中信账单 / 花呗）" style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid var(--border);">
-          <input id="billDay" type="number" min="1" max="31" placeholder="日" style="width:64px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);">
+          <input id="billName" placeholder="名称（中信账单 / 公积金入账）" style="flex:1;min-width:0;padding:8px 10px;border-radius:8px;border:1px solid var(--border);">
+          <input id="billDay" type="number" min="1" max="31" placeholder="日" style="width:60px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);">
+          <select id="billKind" style="width:72px;padding:8px 4px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);">
+            <option value="out">还款</option>
+            <option value="in">入账</option>
+          </select>
           <button class="btn btn-sm btn-primary" id="addBill" style="flex:0 0 auto;">+</button>
         </div>
       </div>
