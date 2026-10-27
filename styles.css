@@ -295,6 +295,12 @@ body {
 .hero-dark .hd-bill-l { font-size: var(--fs-sm); font-weight: 700; color: #fda4af; white-space: nowrap; }
 .hero-dark .hd-bill-v { font-size: var(--fs-sm); color: #fecdd3; text-align: right; }
 .hero-dark .hd-bill-v b { font-family: var(--font-num); font-weight: 800; color: #ffe4e6; }
+/* 入账提醒（公积金等）：绿条，与还款红条区分 */
+.hero-dark .hd-bill.in { background: rgba(16,185,129,.12); border-color: rgba(16,185,129,.35); }
+.hero-dark .hd-bill.in.urgent { background: rgba(16,185,129,.20); border-color: rgba(16,185,129,.50); }
+.hero-dark .hd-bill.in .hd-bill-l { color: #6ee7b7; }
+.hero-dark .hd-bill.in .hd-bill-v { color: #a7f3d0; }
+.hero-dark .hd-bill.in .hd-bill-v b { color: #d1fae5; }
 .hero-dark .hd-payday-v b { font-family: var(--font-num); font-weight: 800; color: #fef3c7; }
 /* 净资产沉到页脚小字（不再是第一眼） */
 .hero-dark .hd-foot { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.10); display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: var(--fs-sm); color: #8b93a7; }
