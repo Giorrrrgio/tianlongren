@@ -138,7 +138,7 @@
   }
 
   /* ============ 公积金 / 社保 固定日自动补记 ============
-     用户约定：公积金每月 13 日入账 +500、社保每月 28 日扣账 366.32。
+     用户约定：公积金每月 13 日入账 +500、社保每月 28 日入账 +366.32（两者都是「钱进账户」的缴存）。
      本 App 无后台定时任务，故「到日子自动入账」= 每次启动时检测当月是否已记，
      未记则自动补一条（写进 hfund/sfund 逐月记录，不动任何账户余额，只记流水）。 */
   const GHJJ_DAY = 13, GHJJ_AMT = 500;
@@ -153,11 +153,11 @@
       D.finance.hfund[mk] = GHJJ_AMT;
       posted.push("公积金 +500");
     }
-    // 社保：到 28 日（含）且当月还没记 → 自动补记 366.32
+    // 社保：到 28 日（含）且当月还没记 → 自动补记 366.32（入账）
     if (day >= SHBAO_DAY && !(D.finance.sfund && D.finance.sfund[mk] != null)) {
       if (!D.finance.sfund) D.finance.sfund = {};
       D.finance.sfund[mk] = SHBAO_AMT;
-      posted.push("社保 -366.32");
+      posted.push("社保 +366.32");
     }
     if (posted.length) {
       try { save(); } catch (e) {}
@@ -855,7 +855,19 @@
     const yAt = (v) => pad.t + ch - ((v - min) / span) * ch;
     const ct = chartTheme();
     ctx.font = "11px sans-serif"; ctx.strokeStyle = ct.grid; ctx.lineWidth = 1;
-    for (let g = 0; g <= 3; g++) { const yy = pad.t + (ch * g) / 3; const val = min + (span * (3 - g)) / 3; ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(w - pad.r, yy); ctx.stroke(); ctx.fillStyle = ct.text; ctx.textAlign = "right"; ctx.fillText(opt.fmtY ? opt.fmtY(val) : Math.round(val), pad.l - 6, yy + 4); }
+    // Y 轴 4 档刻度：跨度小时 Math.round 会产生重复整数（如 66/66/67），看着累。
+    // 先按取整生成，若出现重复则整体降级到一位小数，保证 4 个刻度值互不相同。
+    const yVals = [3, 2, 1, 0].map((g) => min + (span * g) / 3);
+    const fmtAxisVal = (() => {
+      const rounded = yVals.map((v) => Math.round(v));
+      const dedup = new Set(rounded.map(String));
+      if (dedup.size < yVals.length) {
+        // 有重复：跨度太小，改用一位小数（并去尾零，如 66.0→66）
+        return (v) => { const s = v.toFixed(1); return s.endsWith(".0") ? s.slice(0, -2) : s; };
+      }
+      return (v) => String(Math.round(v));
+    })();
+    for (let g = 0; g <= 3; g++) { const yy = pad.t + (ch * g) / 3; const val = yVals[g]; ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(w - pad.r, yy); ctx.stroke(); ctx.fillStyle = ct.text; ctx.textAlign = "right"; ctx.fillText(opt.fmtY ? opt.fmtY(val) : fmtAxisVal(val), pad.l - 6, yy + 4); }
     // 目标线：虚线 + 右端小标签（体重目标等）
     if (opt.goal != null && isFinite(opt.goal) && opt.goal >= min && opt.goal <= max) {
       const gy = yAt(opt.goal);
@@ -4577,6 +4589,8 @@
       else navigate(b.dataset.page);
     }));
     $("#menuBtn").onclick = openDrawer;
+    const settingsBtn = $("#settingsBtn");
+    if (settingsBtn) settingsBtn.onclick = () => navigate("settings");
     $("#backdrop").onclick = closeDrawer;
     $("#modalClose").onclick = closeModal;
     $("#overlay").onclick = (e) => {
