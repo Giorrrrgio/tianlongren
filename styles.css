@@ -188,15 +188,20 @@ body {
 /* ========== 主区域 ========== */
 .backdrop { position: fixed; inset: 0; background: rgba(8,9,12,.45); z-index: 70; display: none; }
 .backdrop.on { display: block; }
-.main { flex: 1; margin-left: 240px; min-height: 100vh; }
+/* min-width:0 是关键：flex item 默认 min-width:auto，内容不可收缩会把 .main 撑得比视口宽，
+   在手机上表现为「右侧内容被裁 / 整页被缩放」。必须显式允许收缩。 */
+.main { flex: 1; margin-left: 240px; min-height: 100vh; min-width: 0; }
 .topbar {
   position: sticky; top: 0; z-index: 60; background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(12px); padding: 14px 26px; display: flex; align-items: center; justify-content: space-between;
   border-bottom: 1px solid var(--border);
 }
 .menu-btn { display: none; width: 38px; height: 38px; border-radius: 11px; border: none; background: var(--surface); font-size: 18px; cursor: pointer; color: var(--ink); }
-.greeting h1 { font-size: var(--fs-xl); font-weight: 800; letter-spacing: -.3px; }
-.greeting p { font-size: var(--fs-sm); color: var(--ink-3); margin-top: 2px; }
+/* 顶栏左侧加了一个设置按钮后，中间的问候语可用宽度变窄；
+   允许它收缩（min-width:0）并让副标题单行省略，避免被挤成两行把顶栏顶高。 */
+.greeting { min-width: 0; flex: 1 1 auto; }
+.greeting h1 { font-size: var(--fs-xl); font-weight: 800; letter-spacing: -.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.greeting p { font-size: var(--fs-sm); color: var(--ink-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .topbar-right { display: flex; align-items: center; gap: 12px; }
 .pill {
   display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px; border-radius: var(--r-full);
