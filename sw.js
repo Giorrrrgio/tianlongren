@@ -1,6 +1,9 @@
 /* 天龙人 Service Worker
  * 缓存策略：Cache First（离线优先，后台静默更新）
- * 版本：tlr-v33
+ * 版本：tlr-v34
+ * v34：修复手机端「UI 显得过大 / 右侧内容被裁」的根因——.main 是 flex item 却缺 min-width:0，
+ *      内容不可收缩把主容器撑得比视口宽 21px（实测 .main 482 > 视口 461），整页横向溢出；
+ *      viewport 恢复 maximum-scale=1.0 锁死缩放；顶栏问候语允许收缩+单行省略，避免被挤成两行。
  * v33：①社保修正为入账（+366.32，与公积金同属「钱进账户」缴存）；②体重趋势图 Y 轴刻度去重
  *      （跨度小时自动降级一位小数，不再出现 66/66/67 重复）；③顶栏菜单按钮右侧新增 ⚙️ 设置按钮
  *      快速跳转设置页；④viewport 去 maximum-scale/user-scalable 限制、加 viewport-fit=cover，
@@ -40,7 +43,7 @@
  *      「网络优先」失效，导致部署后用户仍拿到旧代码）；注册时加 updateViaCache:'none'。
  */
 
-const CACHE_NAME = 'tlr-v33';
+const CACHE_NAME = 'tlr-v34';
 
 // 核心资源：小、必需。用 addAll 一次性预缓存。
 // v7 变更：体重识别已从「截图 OCR」改为「粘贴文本解析」，16MB 的 PP-OCRv4 模型
