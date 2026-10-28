@@ -136,6 +136,35 @@
     }
     return false;
   }
+
+  /* ============ 公积金 / 社保 固定日自动补记 ============
+     用户约定：公积金每月 13 日入账 +500、社保每月 28 日扣账 366.32。
+     本 App 无后台定时任务，故「到日子自动入账」= 每次启动时检测当月是否已记，
+     未记则自动补一条（写进 hfund/sfund 逐月记录，不动任何账户余额，只记流水）。 */
+  const GHJJ_DAY = 13, GHJJ_AMT = 500;
+  const SHBAO_DAY = 28, SHBAO_AMT = 366.32;
+  function autoPostMonthly() {
+    const mk = cmk(); // 当前月 "YYYY-MM"
+    const day = new Date().getDate(); // 当月几号（跨天以现实日期为准，不受 3 点折算影响）
+    let posted = [];
+    // 公积金：到 13 日（含）且当月还没记 → 自动补记 500
+    if (day >= GHJJ_DAY && !(D.finance.hfund && D.finance.hfund[mk] != null)) {
+      if (!D.finance.hfund) D.finance.hfund = {};
+      D.finance.hfund[mk] = GHJJ_AMT;
+      posted.push("公积金 +500");
+    }
+    // 社保：到 28 日（含）且当月还没记 → 自动补记 366.32
+    if (day >= SHBAO_DAY && !(D.finance.sfund && D.finance.sfund[mk] != null)) {
+      if (!D.finance.sfund) D.finance.sfund = {};
+      D.finance.sfund[mk] = SHBAO_AMT;
+      posted.push("社保 -366.32");
+    }
+    if (posted.length) {
+      try { save(); } catch (e) {}
+      return posted;
+    }
+    return null;
+  }
   function renderFrivList() {
     const el = $("#frivList"); if (!el) return;
     const items = frivItems().slice().sort((a, b) => b.date.localeCompare(a.date) || String(b.id).localeCompare(String(a.id)));
@@ -506,18 +535,16 @@
     m.frivolous.items = asArr(m.frivolous.items, true);
     // 还款日 / 记账模板
     m.finance.bills = asArr(m.finance.bills, true).filter((b) => isObj(b) && b.name);
+    // 迁移清理：v31 曾把「公积金入账 / 社保」误预置为还款日提醒，现改为自动入账，这里把它们
+    // 从还款日列表里剔除（它们不再属于「还款提醒」范畴）。
+    m.finance.bills = m.finance.bills.filter((b) => b.name !== "公积金入账" && b.name !== "社保");
     m.finance.bills.forEach((b) => {
       b.day = Math.min(31, Math.max(1, Math.round(+b.day || 1)));
       b.kind = b.kind === "in" ? "in" : "out"; // 入账（钱进来）/ 还款（钱出去）；老数据无此字段按还款
     });
-    // 月度固定事项一次性预置（2026-10-23）：公积金 13 日入账、社保 28 日扣缴。
-    // billsSeeded 标记保证只自动加一次——用户手动删掉后不会复活。
-    if (!m.finance.billsSeeded) {
-      m.finance.billsSeeded = true;
-      const has = (n) => m.finance.bills.some((b) => b && b.name === n);
-      if (!has("公积金入账")) m.finance.bills.push({ id: "ghjj", name: "公积金入账", day: 13, kind: "in" });
-      if (!has("社保")) m.finance.bills.push({ id: "shebao", name: "社保", day: 28, kind: "out" });
-    }
+    // 「存钱」收入分类幂等补齐：用户记账时用它把「存起来的钱」单独归口，计入存钱统计
+    m.finance.icats = asArr(m.finance.icats, false);
+    if (m.finance.icats.indexOf("存钱") < 0) m.finance.icats.push("存钱");
     m.finance.templates = asArr(m.finance.templates, true).filter((t) => isObj(t) && t.name);
     return m;
   }
@@ -753,9 +780,13 @@
   function monthSummary(mk) {
     const st = gms(mk); const tx = txnsOf(mk); let ti = 0, te = 0; const ec = {}, ic = {};
     let saveIn = 0, saveOut = 0; // 当月转入 / 转出储蓄账户（转账，不计入收支）
+    let saveCat = 0; // 收入分类为「存钱」的金额：用户主动把钱标记为存起来，也计入存钱
     tx.forEach((t) => {
       const a = +t.amt || 0;
-      if (t.type === "income") { ti += a; ic[t.cat] = (ic[t.cat] || 0) + a; }
+      if (t.type === "income") {
+        ti += a; ic[t.cat] = (ic[t.cat] || 0) + a;
+        if (t.cat === "存钱") saveCat += a; // 「存钱」收入分类 → 计入存钱统计
+      }
       else if (t.type === "transfer") {
         if (t.to && acctClass(t.to) === "save") saveIn += a;
         if (t.from && acctClass(t.from) === "save") saveOut += a;
@@ -763,7 +794,7 @@
       else { te += a; ec[t.cat] = (ec[t.cat] || 0) + a; }
     });
     const sal = +st.salary || 0; if (sal > 0) ic["月薪"] = (ic["月薪"] || 0) + sal;
-    return { sal, inc: sal + ti, exp: te, bal: sal + ti - te, saveIn, saveOut, saveNet: saveIn - saveOut, ec, ic };
+    return { sal, inc: sal + ti, exp: te, bal: sal + ti - te, saveIn, saveOut, saveCat, saveNet: saveIn - saveOut + saveCat, ec, ic };
   }
 
   /* 本月支出 TOP5：分类横条（金额+占比），配合饼图直观看大头 */
@@ -2334,7 +2365,7 @@
   if (typeof window !== "undefined") window.__parseMultiMealText = parseMultiMealText;
 
   if (typeof window !== "undefined") window.__parseNutritionText = parseNutritionText;
-  if (typeof window !== "undefined") window.__TLR = { get D() { return D; }, normalize, unwrapSave, weeklyReport, weekWorkStats, exportWeeklyReport };
+  if (typeof window !== "undefined") window.__TLR = { get D() { return D; }, normalize, unwrapSave, weeklyReport, weekWorkStats, exportWeeklyReport, monthSummary, autoPostMonthly };
 
   // 一键记一餐：弹窗选餐次 → 进入添加餐食弹窗（addMealModal 记入 curMealDate，可补登历史日期）
   function quickMealModal() {
@@ -2677,7 +2708,9 @@
           const g = (D.nutrition.weightGoal != null && isFinite(D.nutrition.weightGoal)) ? D.nutrition.weightGoal : null;
           let gap = '<span class="w-goal-gap none">设个目标，趋势图上画线追</span>';
           if (g != null && lw) {
-            const diff = +(g - lw.weight).toFixed(1);
+            // 目标是「要降到 g 以下」：当前体重减目标。当前 > 目标 → 还没达成，还要减；
+            // 当前 ≤ 目标 → 已达成。方向以「当前体重」为基准，避免目标<当前时误报「已达成」。
+            const diff = +(lw.weight - g).toFixed(1);
             if (diff > 0) gap = `<span class="w-goal-gap down">还差 ${diff} kg ↓</span>`;
             else if (diff < 0) gap = `<span class="w-goal-gap up">已低于目标 ${-diff} kg 🎉</span>`;
             else gap = `<span class="w-goal-gap ok">🎉 正好达标</span>`;
@@ -2816,7 +2849,7 @@
       if (isNaN(v) || v <= 0) { delete D.nutrition.weightGoal; save(); renderWeight(); toast("已清除体重目标"); return; }
       D.nutrition.weightGoal = Math.round(v * 10) / 10;
       save(); renderWeight();
-      const diff = lw ? +(D.nutrition.weightGoal - lw.weight).toFixed(1) : null;
+      const diff = lw ? +(lw.weight - D.nutrition.weightGoal).toFixed(1) : null;
       toast(diff == null ? "目标已设置 · " + D.nutrition.weightGoal + "kg" : (diff > 0 ? `目标 ${D.nutrition.weightGoal}kg · 还差 ${diff} kg` : diff < 0 ? `目标 ${D.nutrition.weightGoal}kg · 已低于目标 ${-diff} kg 🎉` : "目标已设置 · 正好达标 🎉"));
     };
     $$("#bodyTrendTabs .trend-tab").forEach((b) => b.onclick = () => { D.nutrition.trendDays = +b.dataset.days; save(); renderWeight(); });
@@ -4611,6 +4644,7 @@
     initPWA();     // PWA 支持（SW + 安装提示）
     initVisibilityRefresh();  // 标签页切换自动刷新
     dailyRollover();  // 每日数据重置（凌晨 3 点生效）
+    const autoPosted = autoPostMonthly();  // 公积金/社保固定日自动补记（到日且当月未记才补）
 
     // 添加噪点纹理
     document.body.classList.add('noise-bg');
@@ -4621,6 +4655,11 @@
     if (SYNC_URL) syncPull(renderAll);
     else renderAll();
     rolloverFriv();
+    if (autoPosted && autoPosted.length) {
+      // 补记发生在渲染之后，若当前正好在财务页则重刷一次让新记录上屏
+      if (curPage === "finance") renderFinance();
+      setTimeout(() => toast("已自动入账 · " + autoPosted.join("、")), 600);
+    }
     setInterval(() => {
       // 每分钟检查：月度重置（非必要性开支）
       if (rolloverFriv()) { if (curPage === "finance") renderFinance(); toast("非必要性开支已清空 · 新的一月 🎈"); }
