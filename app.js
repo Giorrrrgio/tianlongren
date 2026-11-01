@@ -375,7 +375,7 @@
   /* ============ 图标库（统一线性矢量风格） ============ */
   function icBox(p, cls) { return `<span class="ic ${cls || ''}">${ICON[p] || '•'}</span>`; }
   const ICON = {
-    creatine: '💊', fishOil: '🐟',
+    creatine: '💊', fishOil: '🐟', q10: '💖',
     chest: '🙌', shoulder: '🤾', back: '🧗', arms: '💪', legs: '🦵', glutes: '🍑', core: '🤸', rest: '😴', cardio: '🏃',
     breakfast: '🍳', lunch: '🍱', dinner: '🍲', snack: '🥨',
     water: '💧', coffee: '☕', green: '🍵', beer: '🍺',
@@ -517,6 +517,7 @@
       c.parts = asArr(c.parts, false).map(String);
       c.creatine = !!c.creatine;
       c.fishOil = !!c.fishOil;
+      c.q10 = !!c.q10;
       m.fitness.calendar[ds] = c;
     }
     m.fitness.actions = asObj(m.fitness.actions);
@@ -2589,12 +2590,18 @@
     let g = ""; for (let i = 0; i < start; i++) g += `<div class="cal-cell other"></div>`;
     for (let d = 1; d <= days; d++) {
       const ds = `${calY}-${String(calM + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-      const e = ft.calendar[ds]; let cls = "cal-cell"; if (ds === t) cls += " today"; let part = "", badges = "";
+      const e = ft.calendar[ds]; let cls = "cal-cell"; if (ds === t) cls += " today"; let part = "", badges = "", bcls = "cell-badges";
       if (e) {
         if (e.parts && e.parts.length) { if (e.parts.includes("休息")) { cls += " rest"; part = "休"; } else { cls += " trained"; part = e.parts.join("·"); } }
-        if (e.creatine) badges += '<span class="bdg bdg-cr">💊</span>'; if (e.fishOil) badges += '<span class="bdg bdg-fo">🐟</span>';
+        const sup = [];
+        if (e.creatine) sup.push('<span class="bdg bdg-cr">💊</span>');
+        if (e.fishOil) sup.push('<span class="bdg bdg-fo">🐟</span>');
+        if (e.q10) sup.push('<span class="bdg bdg-q10">💖</span>');
+        badges = sup.join("");
+        // 三个补剂时格子内宽不够，加 many 让徽章再缩一号，避免最右一个被裁
+        if (sup.length > 2) bcls += " many";
       }
-      g += `<div class="${cls}" data-date="${ds}"><div class="cell-d">${d}</div><div class="cell-badges">${badges}</div>${part ? `<div class="cell-part">${part}</div>` : ""}</div>`;
+      g += `<div class="${cls}" data-date="${ds}"><div class="cell-d">${d}</div><div class="${bcls}">${badges}</div>${part ? `<div class="cell-part">${part}</div>` : ""}</div>`;
     }
     $("#" + gridId).innerHTML = g;
     $$("#" + gridId + " [data-date]").forEach((c) => c.onclick = () => openDayModal(c.dataset.date));
@@ -2651,6 +2658,7 @@
           <span class="lg"><i class="dot" style="background:#3b82f6"></i>休息</span>
           <span class="lg">💊 肌酸</span>
           <span class="lg">🐟 鱼油</span>
+          <span class="lg">💖 Q10</span>
         </div>
       </div>`;
 
@@ -2663,7 +2671,8 @@
       const nRest = es.filter(([, e]) => e.parts && e.parts.includes("休息")).length;
       const nCr = es.filter(([, e]) => e.creatine).length;
       const nFo = es.filter(([, e]) => e.fishOil).length;
-      $("#calSum").innerHTML = `本月训练 <b>${nTrain}</b> 天 · 休息 <b>${nRest}</b> 天 · 💊 <b>${nCr}</b> 天 · 🐟 <b>${nFo}</b> 天`;
+      const nQ10 = es.filter(([, e]) => e.q10).length;
+      $("#calSum").innerHTML = `本月训练 <b>${nTrain}</b> 天 · 休息 <b>${nRest}</b> 天 · 💊 <b>${nCr}</b> 天 · 🐟 <b>${nFo}</b> 天 · 💖 <b>${nQ10}</b> 天`;
       const now = dateFromStr(effToday);
       $("#calTodayBtn").style.visibility = (calY === now.getFullYear() && calM === now.getMonth()) ? "hidden" : "visible";
     };
@@ -2946,13 +2955,14 @@
   }
 
   function openDayModal(ds) {
-    const ft = D.fitness; const e = ft.calendar[ds] || { parts: [], creatine: false, fishOil: false };
-    let sel = [...(e.parts || [])], cr = !!e.creatine, fo = !!e.fishOil;
+    const ft = D.fitness; const e = ft.calendar[ds] || { parts: [], creatine: false, fishOil: false, q10: false };
+    let sel = [...(e.parts || [])], cr = !!e.creatine, fo = !!e.fishOil, q10 = !!e.q10;
+    // 补剂开关行统一生成，新增补剂只加一行调用即可
+    const supRow = (label, key, on) => `<div class="row" style="padding:10px 0;"><div class="row-main"><div class="row-title">${label}</div></div><div class="toggle ${on ? "on" : ""}" data-t="${key}" style="width:44px;height:24px;border-radius:12px;background:${on ? "var(--accent)" : "var(--line)"};position:relative;cursor:pointer;"><div style="width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:2px;left:${on ? "22px" : "2px"};transition:left .2s;"></div></div></div>`;
     const render = () => {
       $("#modalBody").innerHTML = `<div class="card-sub mb-2">选部位 / 补剂，保存即生效</div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;">${CAL_PARTS.map((p) => `<button class="btn btn-sm ${sel.includes(p) ? "btn-primary" : "btn-ghost"}" data-p="${p}">${partIcon(p)} ${p}</button>`).join("")}</div>
-        <div class="row" style="padding:10px 0;"><div class="row-main"><div class="row-title">💊 肌酸</div></div><div class="toggle ${cr ? "on" : ""}" data-t="cr" style="width:44px;height:24px;border-radius:12px;background:${cr ? "var(--accent)" : "var(--line)"};position:relative;cursor:pointer;"><div style="width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:2px;left:${cr ? "22px" : "2px"};transition:left .2s;"></div></div></div>
-        <div class="row" style="padding:10px 0;"><div class="row-main"><div class="row-title">🐟 鱼油</div></div><div class="toggle ${fo ? "on" : ""}" data-t="fo" style="width:44px;height:24px;border-radius:12px;background:${fo ? "var(--accent)" : "var(--line)"};position:relative;cursor:pointer;"><div style="width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:2px;left:${fo ? "22px" : "2px"};transition:left .2s;"></div></div></div>
+        ${supRow("💊 肌酸", "cr", cr)}${supRow("🐟 鱼油", "fo", fo)}${supRow("💖 Q10", "q10", q10)}
         <div class="flex gap-2 mt-2"><button class="btn btn-rose" id="dayClear">清除</button><button class="btn btn-primary w-full" id="daySave">保存</button></div>`;
       $$("#modalBody [data-p]").forEach((b) => b.onclick = () => {
         const p = b.dataset.p;
@@ -2960,11 +2970,16 @@
         else { const i = sel.indexOf("休息"); if (i > -1) sel.splice(i, 1); const j = sel.indexOf(p); if (j > -1) sel.splice(j, 1); else sel.push(p); }
         render();
       });
-      $$("#modalBody [data-t]").forEach((b) => b.onclick = () => { if (b.dataset.t === "cr") cr = !cr; else fo = !fo; render(); });
+      $$("#modalBody [data-t]").forEach((b) => b.onclick = () => {
+        if (b.dataset.t === "cr") cr = !cr;
+        else if (b.dataset.t === "fo") fo = !fo;
+        else q10 = !q10;
+        render();
+      });
       $("#dayClear").onclick = () => { delete ft.calendar[ds]; save(); closeModal(); renderFitness(); renderOverview(); if (curPage === "calendar") renderCalendar(); };
-      $("#daySave").onclick = () => { if (!sel.length && !cr && !fo) delete ft.calendar[ds]; else ft.calendar[ds] = { parts: [...sel], creatine: cr, fishOil: fo }; save(); closeModal(); renderFitness(); renderOverview(); if (curPage === "calendar") renderCalendar(); };
+      $("#daySave").onclick = () => { if (!sel.length && !cr && !fo && !q10) delete ft.calendar[ds]; else ft.calendar[ds] = { parts: [...sel], creatine: cr, fishOil: fo, q10 }; save(); closeModal(); renderFitness(); renderOverview(); if (curPage === "calendar") renderCalendar(); };
     };
-    // 标题带日期（含星期）：标记肌酸/鱼油后回日历也能随时确认是哪天
+    // 标题带日期（含星期）：标记补剂后回日历也能随时确认是哪天
     openModal(`${ds.slice(5)} 周${WK[dateFromStr(ds).getDay()]} · 训练打卡`, ""); render();
   }
 
@@ -3114,7 +3129,9 @@
     let html = "";
     if (e && e.parts.length) {
       const parts = e.parts.join("·");
-      html += `<div class="row"><div class="row-ic" style="background:#d1fae5;color:#047857;">练</div><div class="row-main"><div class="row-title">${t.slice(5)} · ${parts}</div><div class="row-meta">${e.creatine ? '💊' + " 肌酸 " : ""}${e.fishOil ? '🐟' + " 鱼油" : ""}${e.creatine || e.fishOil ? "" : "已打卡"}</div></div><span class="tag tag-green">今日</span></div>`;
+      // 补剂标签按顺序拼，新增补剂只需往数组里加一项
+      const sups = [e.creatine ? "💊 肌酸" : "", e.fishOil ? "🐟 鱼油" : "", e.q10 ? "💖 Q10" : ""].filter(Boolean);
+      html += `<div class="row"><div class="row-ic" style="background:#d1fae5;color:#047857;">练</div><div class="row-main"><div class="row-title">${t.slice(5)} · ${parts}</div><div class="row-meta">${sups.length ? sups.join(" · ") : "已打卡"}</div></div><span class="tag tag-green">今日</span></div>`;
     } else html += emptyState('🏋️', '今天还没训练', '点日历或动作 + 号打卡', null, null);
     $("#trainLog").innerHTML = html;
   }
