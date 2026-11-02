@@ -409,7 +409,7 @@
           { id: "d1", name: "水", water: 200, caffeine: 0, chlorogenic: 0, theophylline: 0 },
           { id: "d4", name: "水(大杯)", water: 700, caffeine: 0, chlorogenic: 0, theophylline: 0 },
           { id: "d2", name: "茶", water: 200, caffeine: 6.67, chlorogenic: 0, theophylline: 4.17 },
-          { id: "d3", name: "咖啡", water: 250, caffeine: 60, chlorogenic: 60, theophylline: 0 },
+          { id: "d3", name: "咖啡", water: 500, caffeine: 60, chlorogenic: 60, theophylline: 0 },
         ],
         trendDays: 7,
       },
@@ -582,6 +582,10 @@
     const d4 = m.nutrition.drinks.find((d) => d.id === "d4");
     if (!d4) m.nutrition.drinks.push({ id: "d4", name: "水(大杯)", water: 700, caffeine: 0, chlorogenic: 0, theophylline: 0 });
     else if (d4.water === 500) d4.water = 700; // 由 500ml 升级到 700ml
+    /* 咖啡杯型 250ml → 500ml（咖啡因等其它参数一概不动），老存档同步迁移 */
+    const d3 = m.nutrition.drinks.find((d) => d.id === "d3") || m.nutrition.drinks.find((d) => d.name === "咖啡");
+    if (!d3) m.nutrition.drinks.push({ id: "d3", name: "咖啡", water: 500, caffeine: 60, chlorogenic: 60, theophylline: 0 });
+    else if (d3.water === 250) d3.water = 500;
     if (!m.nutrition.weight) m.nutrition.weight = [];
     if (!m.fitness) m.fitness = {};
     if (!m.fitness.actions) m.fitness.actions = {};
