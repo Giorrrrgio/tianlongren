@@ -1566,50 +1566,6 @@
     const st = PUNCH_STEPS.find((s) => s.key === key);
     toast("已记录 " + (st ? st.label : key) + " " + nowHM());
   }
-  // 一键工作流：弹窗选段次 + 时间，写入对应段，自动同步到打卡界面
-  // preKey：smartPunch 传入的预选段（已打过自动带入 / 确定区间但需确认时）
-  function punchModal(preKey) {
-    const t = effectiveToday(); const tm = (punchRec(t).times) || {};
-    // 自动识别当前时段直接预选（用户只需确认或改时间）；无预选时留空手选
-    let sel = preKey || smartPunchKey() || null;
-    const autoKey = !!sel && smartPunchKey() === sel; // 这拨预选是「按时间自动识别」出来的
-    const segs = PUNCH_STEPS.map((s) => `<button class="pseg${sel === s.key ? " active" : ""}" data-seg="${s.key}"><div class="pseg-ic">${s.emoji}</div><div class="pseg-l">${s.label}</div><div class="pseg-t">${tm[s.key] || "未打卡"}</div></button>`).join("");
-    openModal("打卡", `
-      <div class="pseg-grid">${segs}</div>
-      <div id="pTimeWrap" style="display:${sel ? "block" : "none"};margin-top:14px;">
-        <label style="display:block;margin-bottom:6px;color:var(--slate);">选择时间（默认当前时刻）</label>
-        <div style="flex-direction:column;gap:8px;align-items:stretch;">
-          <div style="display:flex;gap:8px;align-items:center;">
-            <input type="time" id="pTime" class="punch-time" style="flex:1;">
-            <button class="btn btn-sm btn-ghost" id="pNow">现在</button>
-          </div>
-          <div class="card-sub" id="pAutoTip" style="display:${autoKey ? "block" : "none"};">已按当前时间自动识别 · 可直接确认，也可改时间</div>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end;">
-          <button class="btn btn-ghost" id="pCancel">取消</button>
-          <button class="btn btn-primary" id="pOk">确认打卡</button>
-        </div>
-      </div>
-      <div id="pHint" class="card-sub mt-2">${sel ? "已选：" + PUNCH_STEPS.find((x) => x.key === sel).label : "请选择要打卡的时段"}</div>`);
-    const wrap = $("#pTimeWrap"), hint = $("#pHint"), timeInp = $("#pTime");
-    // 预选段时：时间默认当前时刻；重打已打卡段时默认回填原值
-    timeInp.value = (sel && tm[sel]) || nowHM();
-    $$("#modalBody .pseg").forEach((b) => (b.onclick = () => {
-      sel = b.dataset.seg;
-      timeInp.value = (punchRec(t).times || {})[sel] || nowHM();
-      wrap.style.display = "block"; hint.textContent = "已选：" + PUNCH_STEPS.find((x) => x.key === sel).label;
-      $$("#modalBody .pseg").forEach((x) => x.classList.toggle("active", x === b));
-    }));
-    $("#pNow").onclick = () => { timeInp.value = nowHM(); };
-    $("#pCancel").onclick = () => { sel = null; wrap.style.display = "none"; hint.textContent = "请选择要打卡的时段"; $$("#modalBody .pseg").forEach((x) => x.classList.remove("active")); };
-    $("#pOk").onclick = () => {
-      if (!sel) { toast("请先选择时段", "warn"); return; }
-      const v = timeInp.value || nowHM();
-      punchRec(t).times[sel] = v; save(); closeModal(); renderPunch(); renderOverview();
-      toast("已记录 " + PUNCH_STEPS.find((x) => x.key === sel).label + " " + v);
-      celebratePunch(t); // 四卡打全 → 撒花 + 连续天数/破纪录
-    };
-  }
   function stat(label, value, foot, page) {
     const nav = page ? ` data-nav="${page}" style="cursor:pointer;"` : "";
     return `<div class="stat"${nav}><div class="stat-label">${label}</div><div class="stat-value">${value}</div><div class="stat-foot">${foot}</div></div>`;
@@ -4145,65 +4101,42 @@
     { key: "pmOut", label: "下午下班", emoji: "🌆", win: "17:00", leave: true },
   ];
   function punchRec(ds) { D.punch = D.punch || {}; return D.punch[ds] || (D.punch[ds] = { times: {}, ot: 0 }); }
-  /* 一键打卡智能识别：按当前时间自动判断该打哪张卡。
-   * 用户规则（2026-10-23 改版，依据用户习惯：可能迟到，但绝不提早下班）：
-   *   12:15 之前        → 上午上班卡（amIn）   （睡过头/迟到都记上班卡）
-   *   12:15–13:30       → 上午下班卡（amOut）  （不会早于饭点下班）
-   *   13:30–17:00       → 下午上班卡（pmIn）   （下午开工，不会早退）
-   *   17:00 及以后      → 傍晚下班卡（pmOut）  （只可能迟下班）
-   * 2026-11-02 补：按时间窗选中的那张若今天已打过，则**顺延到最早一张没打、且时间已到**的卡
-   * （PUNCH_EARLY_GRACE 分钟容差）。例：13:29 打卡、上午下班已记 → 直接记「下午上班」，
-   * 不再弹「请选择时段」；只有顺延也不成立（还太早 / 四段全打完）才弹窗人工确认。
-   * 边界按「分钟」比较：12:14:59 算上午上班，12:15:00 算上午下班。 */
-  function smartPunchKey(d) {
+  /* 四段打卡的「时间桶」——用户 2026-11-02 定稿的规则：
+   *   ≤ 08:15        → 上午上班（准时）
+   *   08:16–11:00    → 上午上班（迟到，迟到多少分钟下班就建议延后多少分钟）
+   *   11:01–12:14    → 上午下班（早退）
+   *   12:15–13:30    → 第一次：上午下班（准时）｜第二次：下午上班（准时）
+   *   13:31–16:00    → 下午上班（迟到）
+   *   16:01–16:59    → 下午下班（早退）
+   *   ≥ 17:00        → 下午下班（准时/加班）
+   * 12:15–13:30 是两用窗口：靠「上午下班」是否已记来区分第一次 / 第二次。
+   * 准点/迟到/早退的判定沿用 PUNCH_STEPS.win（08:15 / 12:15 / 13:30 / 17:00），无需另算。 */
+  function punchBucket(d, tm) {
     d = d || new Date();
+    tm = tm || {};
     const mins = d.getHours() * 60 + d.getMinutes();
-    if (mins < 12 * 60 + 15) return "amIn";    // 12:15 之前 → 上午上班（可能迟到）
-    if (mins < 13 * 60 + 30) return "amOut";   // 12:15–13:30 → 上午下班（不早退）
-    if (mins < 17 * 60) return "pmIn";         // 13:30–17:00 → 下午上班（不早退）
-    return "pmOut";                            // 17:00 及以后 → 傍晚下班（可能迟下班）
+    if (mins <= 8 * 60 + 15) return "amIn";     // 08:15 及之前 → 准时上班
+    if (mins <= 11 * 60) return "amIn";         // 08:16–11:00 → 迟到上班
+    if (mins <= 12 * 60 + 14) return "amOut";   // 11:01–12:14 → 早退
+    if (mins <= 13 * 60 + 30) return tm.amOut ? "pmIn" : "amOut"; // 午间两用窗
+    if (mins <= 16 * 60) return "pmIn";         // 13:31–16:00 → 下午迟到
+    if (mins < 17 * 60) return "pmOut";         // 16:01–16:59 → 下午早退
+    return "pmOut";                             // 17:00 及以后 → 准时下班
   }
-  /* 顺延容差：下一段建议时刻之前的这么多分钟内也允许直接记它。
-   * 13:29 打卡（下午上班建议 13:30）就落在容差里，不会因为差 1 分钟被判成上一段。 */
-  const PUNCH_EARLY_GRACE = 15;
-  /* 打卡落点规划（纯计算，不写数据）：
-   * ① 时间窗选中的那段没打过 → 就它（和以前一致）；
-   * ② 已打过 → **只往后顺延**：按四段顺序往后找最早一张没打的，且当前时间已接近它的建议时刻
-   *    （PUNCH_EARLY_GRACE 容差内）才认；绝不回头补更早的段（否则 12:30 连点会把上午上班写成 12:30）。
-   * ③ 都不成立 → 标 conflict，交给弹窗让人确认。 */
-  function planPunch(d) {
-    d = d || new Date();
-    const tm = ((D.punch || {})[effectiveToday()] || {}).times || {};
-    const mins = d.getHours() * 60 + d.getMinutes();
-    const byTime = smartPunchKey(d);
-    if (!tm[byTime]) return { key: byTime, shifted: false };
-    const idx = PUNCH_STEPS.findIndex((s) => s.key === byTime);
-    for (let i = idx + 1; i < PUNCH_STEPS.length; i++) {
-      const st = PUNCH_STEPS[i];
-      if (tm[st.key]) continue;
-      const wm = toMin(st.win);
-      if (wm != null && mins >= wm - PUNCH_EARLY_GRACE) return { key: st.key, shifted: true, skipped: byTime };
-      break; // 下一段还早得很 → 不硬猜，交给弹窗
-    }
-    return { key: byTime, shifted: false, conflict: true };
-  }
-  /* 一键打卡（总览「🕗 打卡」/ 打卡页「打个卡」的统一入口）：
-   * 规划出落点就直接记当前时刻（toast 说明识别结果 / 顺延说明）；
-   * 只有「规划不出可信落点」时才弹窗，预选该段让人确认（可改时间/改段补卡）。 */
+  /* 一键打卡（打卡页「打个卡」/ 总览「🕗 打卡」的统一入口）：
+   * 全程按时间桶自动落卡，不再弹「请选择时段」；
+   * 唯一的人工分支：目标段今天已经记过 → 不静默覆盖，只 toast 提示到下方时间框改。 */
   function smartPunch() {
     const t = effectiveToday();
-    const plan = planPunch();
-    if (plan.conflict) { punchModal(plan.key); return; } // 还太早 or 四段都打完 → 人工确认
-    const st = PUNCH_STEPS.find((s) => s.key === plan.key);
+    const rec = punchRec(t);
+    const tm = rec.times || {};
+    const key = punchBucket(new Date(), tm);
+    const st = PUNCH_STEPS.find((s) => s.key === key);
+    if (tm[key]) { toast("「" + st.label + "」今天已记 " + tm[key] + " · 要改请在下方时间框", "warn"); return; }
     const now = nowHM();
-    punchRec(t).times[plan.key] = now;
+    tm[key] = now;
     save(); renderPunch(); renderOverview();
-    if (plan.shifted) {
-      const sk = PUNCH_STEPS.find((s) => s.key === plan.skipped);
-      toast("「" + sk.label + "」已记过 · 顺延记为「" + st.label + "」 " + now);
-    } else {
-      toast("已按时间识别 · " + st.label + " " + now);
-    }
+    toast("已记 · " + st.label + " " + now);
     celebratePunch(t, "#punchCta"); // 四卡打全 → 撒花 + 连续天数/破纪录
   }
   /* ============ 本周工时统计（周一~周日） ============ */
@@ -4345,9 +4278,12 @@
     let banner;
     if (weekend) banner = "周末 · 打卡计为加班，任意时间记录即可";
     else {
-      const next = PUNCH_STEPS.find((st) => !tm[st.key]);
-      if (!next) banner = "✅ 今日四段打卡已全部记录";
-      else { const wm = toMin(next.win); banner = (nm >= wm) ? `⏰ 该「${next.label}」了（建议 ${next.win}）` : `距「${next.label}」还有 ${wm - nm} 分钟（建议 ${next.win}）`; }
+      // 横幅说的就是「现在点一下会记哪张」，跟一键打卡用同一套时间桶，避免文案与行为不一致
+      const bk = punchBucket(new Date(), tm);
+      const bst = PUNCH_STEPS.find((st) => st.key === bk);
+      if (!bst) banner = "✅ 今日四段打卡已全部记录";
+      else if (tm[bk]) banner = `「${bst.label}」今天已记 ${tm[bk]} · 要改直接改下方时间框`;
+      else banner = `⏰ 下一张：${bst.label}（建议 ${bst.win}）`;
     }
     const keys = Object.keys(D.punch).sort().reverse().slice(0, 7);
     // 迟到补偿：上班迟到≤15min，下班等量延迟则算准时
