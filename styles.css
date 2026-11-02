@@ -797,6 +797,16 @@ textarea { width: 100%; min-height: 80px; resize: vertical; font-family: inherit
 .prow-tip { font-size:12px;color:var(--text-2);margin-top:2px; }
 .punch-time { padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:14px;font-family:var(--font-num); }
 .prow-late { font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap;flex:none; }
+/* 手机窄屏：一行塞不下「标签+时间+状态+迟到提示+现在+删除」，.prow-main 会被挤到逐字换行。
+   改成换行排：第 1 行 标签 + 建议时间，第 2 行 时间框 + 状态 + 按钮，迟到提示单独一行。 */
+@media (max-width: 768px) {
+  .prow { flex-wrap: wrap; row-gap: 8px; align-items: center; padding: 12px 0; }
+  .prow-main { flex: 1 1 100%; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .prow-label { white-space: nowrap; }
+  .prow-tip { margin-top: 0; }
+  .prow .punch-time { flex: 1 1 92px; min-width: 0; }
+  .prow-late { order: 9; flex: 1 1 100%; text-align: center; }
+}
 .prow-late.late { background:#fee2e2;color:#be123c; }
 .prow-late.early { background:#fef3c7;color:#b45309; }
 .punch-foot { margin-top:12px;font-size:12px;color:var(--text-2);line-height:1.6; }
