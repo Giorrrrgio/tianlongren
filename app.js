@@ -4151,8 +4151,9 @@
    *   12:15–13:30       → 上午下班卡（amOut）  （不会早于饭点下班）
    *   13:30–17:00       → 下午上班卡（pmIn）   （下午开工，不会早退）
    *   17:00 及以后      → 傍晚下班卡（pmOut）  （只可能迟下班）
-   * 全天无空隙时段：任何时刻点一下都直接记卡；只有「该卡今天已打过」时
-   * 才弹窗预选原值待确认（不静默覆盖）。边界与 PUNCH_STEPS.win 完全对齐。
+   * 2026-11-02 补：按时间窗选中的那张若今天已打过，则**顺延到最早一张没打、且时间已到**的卡
+   * （PUNCH_EARLY_GRACE 分钟容差）。例：13:29 打卡、上午下班已记 → 直接记「下午上班」，
+   * 不再弹「请选择时段」；只有顺延也不成立（还太早 / 四段全打完）才弹窗人工确认。
    * 边界按「分钟」比较：12:14:59 算上午上班，12:15:00 算上午下班。 */
   function smartPunchKey(d) {
     d = d || new Date();
@@ -4162,21 +4163,47 @@
     if (mins < 17 * 60) return "pmIn";         // 13:30–17:00 → 下午上班（不早退）
     return "pmOut";                            // 17:00 及以后 → 傍晚下班（可能迟下班）
   }
+  /* 顺延容差：下一段建议时刻之前的这么多分钟内也允许直接记它。
+   * 13:29 打卡（下午上班建议 13:30）就落在容差里，不会因为差 1 分钟被判成上一段。 */
+  const PUNCH_EARLY_GRACE = 15;
+  /* 打卡落点规划（纯计算，不写数据）：
+   * ① 时间窗选中的那段没打过 → 就它（和以前一致）；
+   * ② 已打过 → **只往后顺延**：按四段顺序往后找最早一张没打的，且当前时间已接近它的建议时刻
+   *    （PUNCH_EARLY_GRACE 容差内）才认；绝不回头补更早的段（否则 12:30 连点会把上午上班写成 12:30）。
+   * ③ 都不成立 → 标 conflict，交给弹窗让人确认。 */
+  function planPunch(d) {
+    d = d || new Date();
+    const tm = ((D.punch || {})[effectiveToday()] || {}).times || {};
+    const mins = d.getHours() * 60 + d.getMinutes();
+    const byTime = smartPunchKey(d);
+    if (!tm[byTime]) return { key: byTime, shifted: false };
+    const idx = PUNCH_STEPS.findIndex((s) => s.key === byTime);
+    for (let i = idx + 1; i < PUNCH_STEPS.length; i++) {
+      const st = PUNCH_STEPS[i];
+      if (tm[st.key]) continue;
+      const wm = toMin(st.win);
+      if (wm != null && mins >= wm - PUNCH_EARLY_GRACE) return { key: st.key, shifted: true, skipped: byTime };
+      break; // 下一段还早得很 → 不硬猜，交给弹窗
+    }
+    return { key: byTime, shifted: false, conflict: true };
+  }
   /* 一键打卡（总览「🕗 打卡」/ 打卡页「打个卡」的统一入口）：
-   * 全天四个区间都确定 → 直接记当前时刻（toast 说明识别结果）；
-   * 该卡今天已打过 → 不静默覆盖，弹窗预选该段让人确认（可改时间/改段补卡）。
-   * 注：smartPunchKey 现恒有值（无空隙时段），!key 分支仅为防御性保留。 */
+   * 规划出落点就直接记当前时刻（toast 说明识别结果 / 顺延说明）；
+   * 只有「规划不出可信落点」时才弹窗，预选该段让人确认（可改时间/改段补卡）。 */
   function smartPunch() {
     const t = effectiveToday();
-    const key = smartPunchKey();
-    if (!key) { punchModal(); return; }
-    const st = PUNCH_STEPS.find((s) => s.key === key);
-    const tm = (punchRec(t).times) || {};
-    if (tm[key]) { punchModal(key); return; } // 已打过：预选该段弹窗，允许改时间/确认覆盖
+    const plan = planPunch();
+    if (plan.conflict) { punchModal(plan.key); return; } // 还太早 or 四段都打完 → 人工确认
+    const st = PUNCH_STEPS.find((s) => s.key === plan.key);
     const now = nowHM();
-    punchRec(t).times[key] = now;
+    punchRec(t).times[plan.key] = now;
     save(); renderPunch(); renderOverview();
-    toast("已按时间识别 · " + st.label + " " + now);
+    if (plan.shifted) {
+      const sk = PUNCH_STEPS.find((s) => s.key === plan.skipped);
+      toast("「" + sk.label + "」已记过 · 顺延记为「" + st.label + "」 " + now);
+    } else {
+      toast("已按时间识别 · " + st.label + " " + now);
+    }
     celebratePunch(t, "#punchCta"); // 四卡打全 → 撒花 + 连续天数/破纪录
   }
   /* ============ 本周工时统计（周一~周日） ============ */
