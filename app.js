@@ -1246,12 +1246,12 @@
       <div class="card">
         <div class="card-head"><div class="card-title">今日动线 · 一键直达</div><span class="card-sub">今日已登记 ${fdN}/6</span></div>
         <div class="flow-bar">
-          <button class="flow-btn ${fd.weight ? "done" : ""}" data-q="weight">🐖 体重${fd.weight ? " ✓" : ""}</button>
-          <button class="flow-btn ${fd.calendar ? "done" : ""}" data-q="calendar">📅 日历${fd.calendar ? " ✓" : ""}</button>
-          <button class="flow-btn ${fd.meal ? "done" : ""}" data-q="meal">🍣 餐食${fd.meal ? " ✓" : ""}</button>
-          <button class="flow-btn ${fd.finance ? "done" : ""}" data-q="finance">💎 记账${fd.finance ? " ✓" : ""}</button>
-          <button class="flow-btn ${fd.punchIn ? "done" : ""}" data-q="punchIn">🕗 打卡${fd.punchIn ? " ✓" : ""}</button>
-          <button class="flow-btn ${fd.water ? "done" : ""}" data-q="water">🥃 喝水${fd.water ? " ✓" : ""}</button>
+          <button class="flow-btn ${fd.weight ? "done" : ""}" data-q="weight"><span class="q-ic">🐖</span><span class="q-lb">体重</span>${fd.weight ? '<span class="q-ok">✓</span>' : ""}</button>
+          <button class="flow-btn ${fd.calendar ? "done" : ""}" data-q="calendar"><span class="q-ic">📅</span><span class="q-lb">日历</span>${fd.calendar ? '<span class="q-ok">✓</span>' : ""}</button>
+          <button class="flow-btn ${fd.meal ? "done" : ""}" data-q="meal"><span class="q-ic">🍣</span><span class="q-lb">餐食</span>${fd.meal ? '<span class="q-ok">✓</span>' : ""}</button>
+          <button class="flow-btn ${fd.finance ? "done" : ""}" data-q="finance"><span class="q-ic">💎</span><span class="q-lb">记账</span>${fd.finance ? '<span class="q-ok">✓</span>' : ""}</button>
+          <button class="flow-btn ${fd.punchIn ? "done" : ""}" data-q="punchIn"><span class="q-ic">🕗</span><span class="q-lb">打卡</span>${fd.punchIn ? '<span class="q-ok">✓</span>' : ""}</button>
+          <button class="flow-btn ${fd.water ? "done" : ""}" data-q="water"><span class="q-ic">🥃</span><span class="q-lb">喝水</span>${fd.water ? '<span class="q-ok">✓</span>' : ""}</button>
         </div>
       </div>
 
