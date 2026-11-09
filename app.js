@@ -3252,13 +3252,15 @@
 
         <details class="asset-edit">
           <summary>理财与负债（点击展开）</summary>
-          <div class="card-sub mb-1">理财项目</div>
-          <div id="invList"></div>
-          <div style="display:grid;grid-template-columns:1fr 80px 80px;gap:8px;margin-top:8px;"><input id="invName" placeholder="名称"><input id="invCap" type="number" placeholder="本金"><input id="invCv" type="number" placeholder="市值"></div>
-          <button class="btn btn-sm w-full mt-1" id="addInv">+ 添加理财</button>
-          <div class="card-sub mb-1 mt-2">负债</div>
-          <div id="debtList"></div>
-          <div style="display:flex;gap:8px;margin-top:8px;"><input id="debtName" placeholder="负债名" style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid var(--border);"><input id="debtAmt" type="number" placeholder="金额" style="width:90px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);"><button class="btn btn-sm" id="addDebt">+</button></div>
+          <div class="ae-body">
+            <div class="card-sub mb-1">理财项目</div>
+            <div id="invList"></div>
+            <div class="ae-add ae-add-inv"><input id="invName" placeholder="名称"><input id="invCap" type="number" placeholder="本金"><input id="invCv" type="number" placeholder="市值"></div>
+            <button class="btn btn-sm w-full mt-1" id="addInv">+ 添加理财</button>
+            <div class="card-sub mb-1 mt-2">负债</div>
+            <div id="debtList"></div>
+            <div class="ae-add ae-add-debt"><input id="debtName" placeholder="负债名"><input id="debtAmt" type="number" placeholder="金额"><button class="btn btn-sm" id="addDebt">+</button></div>
+          </div>
         </details>
       </div>
 
@@ -3831,13 +3833,13 @@
     }
 
     if ($("#invList")) {
-      $("#invList").innerHTML = D.finance.invs.length ? D.finance.invs.map((iv, i) => `<div class="row" style="padding:8px 0;"><input class="fld" style="flex:1;padding:6px 8px;" data-inv="${i}" data-f="name" value="${esc(iv.name)}"><input class="fld" style="width:80px;text-align:right;padding:6px 8px;" type="number" data-inv="${i}" data-f="cv" value="${iv.cv}"><span class="num ${iv.cv - iv.cap >= 0 ? "text-green" : "text-rose"}" style="min-width:64px;text-align:right;color:${iv.cv - iv.cap >= 0 ? "#047857" : "#be123c"}">${iv.cv - iv.cap >= 0 ? "+" : ""}${MM2(iv.cv - iv.cap)}</span><button class="mi-del" data-delinv="${i}">×</button></div>`).join("") : `<div class="card-sub">暂无理财</div>`;
+      $("#invList").innerHTML = D.finance.invs.length ? D.finance.invs.map((iv, i) => `<div class="inv-row"><input class="ae-in" data-inv="${i}" data-f="name" value="${esc(iv.name)}"><input class="ae-num" type="number" data-inv="${i}" data-f="cv" value="${iv.cv}"><span class="num ${iv.cv - iv.cap >= 0 ? "text-green" : "text-rose"}" style="text-align:right;color:${iv.cv - iv.cap >= 0 ? "#047857" : "#be123c"}">${iv.cv - iv.cap >= 0 ? "+" : ""}${MM2(iv.cv - iv.cap)}</span><button class="mi-del" data-delinv="${i}">×</button></div>`).join("") : `<div class="card-sub">暂无理财</div>`;
       $$("#invList [data-inv]").forEach((i) => i.onchange = () => { const iv = D.finance.invs[+i.dataset.inv]; iv[i.dataset.f] = i.dataset.f === "name" ? i.value : (+i.value || 0); save(); renderAssets(); refreshFinCharts(); renderOverview(); });
       $$("#invList [data-delinv]").forEach((b) => b.onclick = () => { D.finance.invs.splice(+b.dataset.delinv, 1); save(); renderAssets(); refreshFinCharts(); renderOverview(); });
     }
 
     if ($("#debtList")) {
-      $("#debtList").innerHTML = D.finance.debts.length ? D.finance.debts.map((d, i) => `<div class="row" style="padding:8px 0;"><div class="row-main"><div class="row-title">${esc(d.name)}</div></div><input class="fld" style="width:100px;text-align:right;padding:6px 8px;" type="number" data-debt="${i}" value="${d.amt}"><button class="mi-del" data-deldebt="${i}">×</button></div>`).join("") : `<div class="card-sub">暂无负债</div>`;
+      $("#debtList").innerHTML = D.finance.debts.length ? D.finance.debts.map((d, i) => `<div class="row" style="padding:8px 0;"><div class="row-main"><div class="row-title">${esc(d.name)}</div></div><input class="ae-num" style="width:110px;flex:none;text-align:right;padding:8px 9px;" type="number" data-debt="${i}" value="${d.amt}"><button class="mi-del" data-deldebt="${i}" style="flex:none;">×</button></div>`).join("") : `<div class="card-sub">暂无负债</div>`;
       $$("#debtList [data-debt]").forEach((i) => i.onchange = () => { D.finance.debts[+i.dataset.debt].amt = +i.value || 0; save(); renderAssets(); refreshFinCharts(); renderOverview(); });
       $$("#debtList [data-deldebt]").forEach((b) => b.onclick = () => { D.finance.debts.splice(+b.dataset.deldebt, 1); save(); renderAssets(); refreshFinCharts(); renderOverview(); });
     }
