@@ -191,18 +191,28 @@ body {
 /* min-width:0 是关键：flex item 默认 min-width:auto，内容不可收缩会把 .main 撑得比视口宽，
    在手机上表现为「右侧内容被裁 / 整页被缩放」。必须显式允许收缩。 */
 .main { flex: 1; margin-left: 240px; min-height: 100vh; min-width: 0; }
+/* 顶栏必须是不透明实色：iOS Safari / PWA WebView 里「position:sticky + backdrop-filter」
+   会把整个合成层连自身文字一起栅格化，滚动后设置按钮、问候语、日期会整行发虚；
+   半透明底色还会把极光背景混进来，进一步压低文字对比度。
+   这里彻底不用 blur，文字永远待在清晰的独立层上（下面玻璃主题层也有同名覆盖，需同步）。 */
 .topbar {
-  position: sticky; top: 0; z-index: 60; background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(12px); padding: 14px 26px; display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 60; background: var(--surface);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  padding: calc(12px + env(safe-area-inset-top)) 26px 12px;
+  display: flex; align-items: center; justify-content: space-between;
   border-bottom: 1px solid var(--border);
 }
 .menu-btn { display: none; width: 38px; height: 38px; border-radius: 11px; border: none; background: var(--surface); font-size: 18px; cursor: pointer; color: var(--ink); }
 /* 顶栏左侧加了一个设置按钮后，中间的问候语可用宽度变窄；
    允许它收缩（min-width:0）并让副标题单行省略，避免被挤成两行把顶栏顶高。 */
+/* 左侧整组也要允许收缩：它同样是 .topbar 的 flex item，默认 min-width:auto
+   会被「两个按钮 + 不换行的问候语」撑出约 400px，把右侧按钮组顶出窄屏视口
+   （实测 360/375/390px 下 scrollWidth=400 横向溢出）。右侧则固定不收缩。 */
+.topbar-left { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; }
 .greeting { min-width: 0; flex: 1 1 auto; }
 .greeting h1 { font-size: var(--fs-xl); font-weight: 800; letter-spacing: -.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.greeting p { font-size: var(--fs-sm); color: var(--ink-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.topbar-right { display: flex; align-items: center; gap: 12px; }
+.greeting p { font-size: var(--fs-sm); color: var(--ink-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.topbar-right { display: flex; align-items: center; gap: 12px; flex: none; }
 .pill {
   display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px; border-radius: var(--r-full);
   background: var(--surface); border: 1px solid var(--border); font-weight: 700; cursor: pointer; color: var(--ink);
@@ -777,6 +787,8 @@ textarea { width: 100%; min-height: 80px; resize: vertical; font-family: inherit
   .sidebar.open { transform: translateX(0); box-shadow: var(--sh-lg); }
   .main { margin-left: 0; }
   .menu-btn { display: flex; align-items: center; justify-content: center; }
+  /* 顶栏左右和 .content 对齐（原来 26px 比内容宽，问候语被无谓挤窄） */
+  .topbar { padding-left: 16px; padding-right: 16px; }
   /* 底部 110px：固定底部快捷栏（约 61px + 安全区）+ 滚动缓冲，别让最后一项被挡住 */
   .content { padding: 16px 16px calc(96px + env(safe-area-inset-bottom)); }
   .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
@@ -840,12 +852,41 @@ textarea { width: 100%; min-height: 80px; resize: vertical; font-family: inherit
 .pseg-t { font-size:13px;color:var(--text-2);font-family:var(--font-num); }
 .pseg.active .pseg-t { color:var(--accent-ink); }
 
-/* ========== 今日动线快捷栏 ========== */
-.flow-bar { display:flex;flex-wrap:wrap;gap:8px;margin-top:10px; }
+/* ========== 今日动线快捷栏 ==========
+ * 每天点得最多的入口：桌面放大胶囊热区，手机改成 3×2 等宽大磁贴。
+ * 只放大 .flow-bar 里的按钮；弹窗里同名的 .flow-btn（餐食选择、模板、分类等）保持原尺寸。 */
+.flow-bar { display:flex;flex-wrap:wrap;gap:10px;margin-top:12px; }
 .flow-btn { padding:9px 14px;border-radius:var(--r-full);border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:13px;font-weight:700;cursor:pointer;transition:transform .12s, border-color .12s, background .12s; }
 .flow-btn.done { background: var(--green-soft); border-color: var(--green-soft); color: var(--green-ink); }
-.flow-btn:hover { transform:translateY(-1px);border-color:var(--accent);background:var(--accent-soft); }
 .flow-btn.qt-sel { background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 2px 8px -2px rgba(99,102,241,.4); }
+.flow-bar > .flow-btn {
+  position: relative; min-height: 46px; padding: 10px 20px; font-size: 14px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  /* 显式给实色底 + 细边框：玻璃主题层后面会把 .flow-btn 的背景改成半透明，
+     大磁贴没有可见边界就不像按钮了。这里用更高优先级压住它。 */
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.flow-bar > .flow-btn.done { background: var(--green-soft); border-color: var(--green-soft); color: var(--green-ink); }
+.flow-bar > .flow-btn .q-ic { font-size: 18px; line-height: 1; flex: none; }
+.flow-bar > .flow-btn .q-lb { font-size: 14px; font-weight: 800; }
+.flow-bar > .flow-btn .q-ok { font-size: 12px; font-weight: 800; margin-left: 2px; }
+/* hover 抬升只对真有鼠标的设备生效，手机上点按不该闪一下 */
+@media (hover: hover) and (pointer: fine) {
+  .flow-btn:hover { transform:translateY(-1px);border-color:var(--accent);background:var(--accent-soft); }
+}
+@media (max-width: 768px) {
+  .flow-bar { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .flow-bar > .flow-btn {
+    min-height: 70px; padding: 9px 4px; border-radius: var(--r-md);
+    flex-direction: column; gap: 4px;
+  }
+  .flow-bar > .flow-btn .q-ic { font-size: 25px; }
+  .flow-bar > .flow-btn .q-lb { font-size: 14px; letter-spacing: .2px; }
+  .flow-bar > .flow-btn .q-ok {
+    position: absolute; top: 6px; right: 8px; margin: 0;
+    font-size: 12px; line-height: 1;
+  }
+}
 
 /* 页面顶部主动作按钮：称个重 / 打个卡 / 喝口水 / 记一餐 / 记一笔 */
 .page-cta {
@@ -965,6 +1006,17 @@ body.fin-locked .chart-box::after { content:"🔒 财务已加密"; position:abs
   min-width: 2ch; /* 秒恒占两位，杜绝「9→10」这类进位时跳宽 */
   text-align: center;
 }
+/* 窄屏（≤400px）：.ov-clock 是 flex:0 0 auto 不收缩，36px 的 00:34:53 会占掉约 196px，
+   把 .ov-date-left 挤到只剩 60 多 px，nowrap 的「2026年11月·周二」就会盖到时钟上。
+   改成上下两行，日期与时钟各占一行，彻底不抢宽度；>400px 完全不受影响。 */
+@media (max-width: 400px) {
+  .ov-date { flex-direction: column; align-items: stretch; gap: 12px; padding: 18px 18px; }
+  .ov-date-left { flex: 0 0 auto; }
+  .ov-date-d { font-size: 40px; }
+  .ov-clock { align-self: stretch; padding: 10px 12px; }
+  .ov-clock-time { font-size: 30px; }
+  .ov-clock-time .sec { font-size: 22px; }
+}
 
 /* ========== 总览：今日营养 ========== */
 .ov-nutri { display:flex; gap:20px; align-items:center; flex-wrap:wrap; }
@@ -1044,12 +1096,13 @@ body::before {
 .nav-item:hover { background: rgba(255, 255, 255, .09); }
 .nav-item.active { background: rgba(255, 255, 255, .14); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
 
-/* ---- 顶栏：更透的玻璃 ---- */
+/* ---- 顶栏：实色清晰层 ----
+ * 这里刻意不套用玻璃主题。sticky + backdrop-filter 在 iOS 上会连顶栏文字一起糊掉，
+ * 且半透明会把极光背景混进文字底下。实色 + 细分隔线，清晰度优先。 */
 .topbar {
-  background: color-mix(in srgb, var(--bg) 60%, transparent);
-  -webkit-backdrop-filter: blur(22px) saturate(180%);
-  backdrop-filter: blur(22px) saturate(180%);
-  border-bottom: 1px solid var(--glass-border);
+  background: var(--surface);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  border-bottom: 1px solid var(--border);
 }
 
 /* ---- 弹窗 / Toast / 遮罩 ---- */
@@ -1090,7 +1143,8 @@ body::before {
 .punch-banner { background: color-mix(in srgb, var(--accent-soft) 78%, transparent); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
 .punch-banner.we { background: color-mix(in srgb, var(--amber-soft) 78%, transparent); }
 .trend-tab.active { background: var(--glass-strong); }
-.theme-btn, .pill, .menu-btn { background: var(--glass-2); border-color: var(--glass-border); }
+/* 顶栏按钮也用实色：半透明玻璃叠在顶栏上会让 ⚙️ / 主题图标发灰 */
+.theme-btn, .pill, .menu-btn { background: var(--surface-2); border: 1px solid var(--border); }
 
 /* ---- 表单：玻璃输入框 ---- */
 .fld input, .fld select, .fld textarea {
