@@ -406,8 +406,8 @@
         weight: [],
         water: {},
         drinks: [
-          { id: "d1", name: "水", water: 200, caffeine: 0, chlorogenic: 0, theophylline: 0 },
-          { id: "d4", name: "水(大杯)", water: 500, caffeine: 0, chlorogenic: 0, theophylline: 0 },
+          { id: "d1", name: "水", water: 500, caffeine: 0, chlorogenic: 0, theophylline: 0 },
+          { id: "d4", name: "水(大杯)", water: 700, caffeine: 0, chlorogenic: 0, theophylline: 0 },
           { id: "d2", name: "茶", water: 200, caffeine: 6.67, chlorogenic: 0, theophylline: 4.17 },
           { id: "d3", name: "咖啡", water: 500, caffeine: 60, chlorogenic: 60, theophylline: 0 },
         ],
@@ -578,10 +578,19 @@
     if (!m.nutrition) m.nutrition = {};
     if (!m.nutrition.daily) m.nutrition.daily = {};
     if (!m.nutrition.drinks) m.nutrition.drinks = [];
-    /* 确保「水(大杯)」始终存在且为 500ml（老存档补全 + 容量迁移：700 → 500） */
-    const d4 = m.nutrition.drinks.find((d) => d.id === "d4");
-    if (!d4) m.nutrition.drinks.push({ id: "d4", name: "水(大杯)", water: 500, caffeine: 0, chlorogenic: 0, theophylline: 0 });
-    else if (d4.water === 700) d4.water = 500; // 由 700ml 调回 500ml
+    /* 杯型容量定稿（一次性迁移）：小杯「水」= 500ml、大杯「水(大杯)」= 700ml。
+       老存档里是「水 200 / 大杯 500 或 700」，只认旧默认值升级；
+       用 drinkVolV42 标记保证只跑一次，之后在设置里手动改成任何数值都不会被反复覆盖。
+       （上一版曾把大杯 700→500，这里必须整段替换掉，否则新装 700 又会被改回 500。） */
+    if (!m.nutrition.drinkVolV42) {
+      const d1 = m.nutrition.drinks.find((d) => d.id === "d1") || m.nutrition.drinks.find((d) => d.name === "水");
+      if (!d1) m.nutrition.drinks.unshift({ id: "d1", name: "水", water: 500, caffeine: 0, chlorogenic: 0, theophylline: 0 });
+      else if (d1.water === 200) d1.water = 500;
+      const d4 = m.nutrition.drinks.find((d) => d.id === "d4") || m.nutrition.drinks.find((d) => d.name === "水(大杯)");
+      if (!d4) m.nutrition.drinks.push({ id: "d4", name: "水(大杯)", water: 700, caffeine: 0, chlorogenic: 0, theophylline: 0 });
+      else if (d4.water === 500) d4.water = 700;
+      m.nutrition.drinkVolV42 = true;
+    }
     /* 咖啡杯型 250ml → 500ml（咖啡因等其它参数一概不动），老存档同步迁移 */
     const d3 = m.nutrition.drinks.find((d) => d.id === "d3") || m.nutrition.drinks.find((d) => d.name === "咖啡");
     if (!d3) m.nutrition.drinks.push({ id: "d3", name: "咖啡", water: 500, caffeine: 60, chlorogenic: 60, theophylline: 0 });
@@ -2872,7 +2881,7 @@
     const goalHtml = goalOK
       ? `<div class="w-goal ok">🎉 已达成今日饮水目标 · 2000ml</div>`
       : `<div class="w-goal left">还差 ${fmtInt(2000 - w.water)} ml 达标</div>`;
-    const drinkBtns = (D.nutrition.drinks || []).map((d) => `<button class="drink" data-drink="${d.id}">${drinkIcon(d.name)} ${esc(d.name)} +${d.water}ml</button>`).join("");
+    const drinkBtns = (D.nutrition.drinks || []).map((d) => `<button class="drink" data-drink="${d.id}"><span class="dk-ic">${drinkIcon(d.name)}</span><span class="dk-nm">${esc(d.name)}</span><span class="dk-ml">+${d.water}ml</span></button>`).join("");
     $("#body-water").innerHTML = `
       <div class="card">
         <div class="card-head">
@@ -3774,7 +3783,7 @@
         ? w.drinks.slice().reverse().map((d) => `<div class="row" style="padding:5px 0;"><div class="row-main"><div class="row-title" style="font-size:13px;">${drinkIcon(d.name)} ${esc(d.name)}</div></div><span class="row-meta" style="font-size:12px;">${d.time || ""}</span></div>`).join("")
         : `<div class="card-sub" style="font-size:12px;">今天还没记录</div>`;
       const drinkChips = drinks.length
-        ? drinks.map((d) => `<button class="flow-btn" data-qd="${d.id}" style="padding:8px 12px;font-size:13px;">${drinkIcon(d.name)} ${esc(d.name)}<span style="color:var(--text-soft);font-weight:600;margin-left:4px;">+${d.water}</span></button>`).join("")
+        ? drinks.map((d) => `<button class="flow-btn" data-qd="${d.id}"><span class="qw-ic">${drinkIcon(d.name)}</span><span class="qw-nm">${esc(d.name)}</span><span class="qw-ml">+${d.water}ml</span></button>`).join("")
         : `<div class="card-sub">还没有饮品模板，去喝水页添加</div>`;
       $("#modalBody").innerHTML = `
         <div style="text-align:center;margin-bottom:14px;">
@@ -3783,7 +3792,7 @@
         </div>
         <div class="bar" style="height:8px;"><div class="bar-fill" style="width:${Math.round(wPct * 100)}%;background:linear-gradient(90deg,#38bdf8,#2563eb);"></div></div>
         <div class="card-sub mt-3" style="font-weight:700;">点饮品即记录（可连续点）</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">${drinkChips}</div>
+        <div class="qw-grid">${drinkChips}</div>
         <div class="card-sub mt-3" style="font-weight:700;">今日喝过</div>
         <div class="scroll-list" style="max-height:160px;">${drinkLog}</div>
       `;
