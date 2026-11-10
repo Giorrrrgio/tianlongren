@@ -613,12 +613,37 @@ body {
 .wb-row { margin-bottom: 10px; }
 .wb-top { display: flex; justify-content: space-between; font-size: var(--fs-sm); margin-bottom: 4px; }
 .wb-top b { color: var(--ink); }
-.drink-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.drink {
-  display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: var(--r-full);
-  border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-weight: 700; font-size: var(--fs-sm); color: var(--ink-2); transition: all .15s;
+/* 喝水按键：每天点得最多，改成大磁贴（桌面 4 列、手机 2×2）。
+   用 .drink-list > .drink 提高优先级，压住玻璃主题层后面那条 .drink 的半透明覆盖。 */
+.drink-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.drink-list > .drink {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  min-height: 78px; padding: 10px 6px; border-radius: var(--r-md);
+  border: 1px solid var(--border); background: var(--surface);
+  cursor: pointer; font-weight: 700; font-size: 14px; color: var(--ink-2);
+  transition: transform .12s, background .15s, border-color .15s, color .15s;
 }
-.drink:hover { background: var(--blue-soft); border-color: var(--blue); color: var(--blue-ink); }
+.drink-list > .drink .dk-ic { font-size: 27px; line-height: 1.1; flex: none; }
+.drink-list > .drink .dk-ic .ic { margin-right: 0; color: inherit; }
+.drink-list > .drink .dk-nm { font-size: 14px; font-weight: 800; white-space: nowrap; }
+.drink-list > .drink .dk-ml { font-size: 12px; font-weight: 800; color: var(--blue); font-family: var(--font-num); }
+@media (hover: hover) and (pointer: fine) {
+  .drink-list > .drink:hover { transform: translateY(-1px); background: var(--blue-soft); border-color: var(--blue); color: var(--blue-ink); }
+}
+@media (max-width: 768px) {
+  .drink-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* 一键直达 → 快速喝水弹窗：同样放大成 2 列磁贴 */
+.qw-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.qw-grid > .flow-btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  min-height: 64px; padding: 8px 4px; border-radius: var(--r-md);
+  background: var(--surface-2); border: 1px solid var(--border); font-size: 14px;
+}
+.qw-grid > .flow-btn .qw-ic { font-size: 23px; line-height: 1.1; }
+.qw-grid > .flow-btn .qw-ic .ic { margin-right: 0; }
+.qw-grid > .flow-btn .qw-nm { font-size: 13px; font-weight: 800; white-space: nowrap; }
+.qw-grid > .flow-btn .qw-ml { font-size: 12px; font-weight: 800; color: var(--blue); font-family: var(--font-num); }
 
 /* ========== 表单 ========== */
 .form { display: grid; gap: 14px; }
