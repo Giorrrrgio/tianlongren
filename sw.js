@@ -1,6 +1,14 @@
 /* 天龙人 Service Worker
- * 缓存策略：Cache First（离线优先，后台静默更新）
- * 版本：tlr-v42
+ * 缓存策略：代码（HTML/JS/CSS）Network First，带 cache:'no-store' 绕开 Pages 的
+ *           10 分钟 HTTP 缓存，离线时回退 Cache Storage；其它资源 Cache First + 后台静默更新。
+ *           （旧注释写「Cache First」与实现不符，v43 更正。）
+ * 版本：tlr-v43
+ * v43：UI 打磨 + 设计令牌统一 + 低风险工程债。
+ *      设置页输入框恢复可见边框（玻璃层半透明白边让它看起来像纯文本）、训练页折叠箭头改圆形徽章并压缩卡片、
+ *      日历小结独立浅底条、财务深色 hero 降噪、总览周报按钮做出按钮感、手机端卡片节奏收紧；
+ *      新增 --good/--bad/--warn/--hero-good/--hero-bad 语义令牌并修暗色穿帮（wk-bar / top5-rank / ov-q）；
+ *      版本号收成 APP_VERSION 单一常量；esc() 改字符替换不再逐次创建 DOM；小按钮热区放大并补 aria-label；
+ *      SW 离线回退改 ignoreSearch 以命中不带 ?v= 的预缓存。
  * v42：杯型定稿——小杯「水」200→500ml、大杯「水(大杯)」500→700ml；
  *      normalize 用 drinkVolV42 一次性标记迁移（老存档里大杯原本 700 保持不动，
  *      之后用户在设置里手改任何容量都不会被反复覆盖），并整段移除上一版 700→500 的反向迁移。
@@ -73,7 +81,7 @@
  *      「网络优先」失效，导致部署后用户仍拿到旧代码）；注册时加 updateViaCache:'none'。
  */
 
-const CACHE_NAME = 'tlr-v42';
+const CACHE_NAME = 'tlr-v43';
 
 // 核心资源：小、必需。用 addAll 一次性预缓存。
 // v7 变更：体重识别已从「截图 OCR」改为「粘贴文本解析」，16MB 的 PP-OCRv4 模型
@@ -157,7 +165,9 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
         }
         return resp;
-      }).catch(() => caches.match(request).then((cached) => cached || caches.match('/tianlongren/')))
+      /* 预缓存的 CORE_ASSETS 不带 ?v= 查询串，而页面请求带 ?v=；
+         ignoreSearch 让离线回退能命中预缓存，否则离线打开会白屏。 */
+      }).catch(() => caches.match(request, { ignoreSearch: true }).then((cached) => cached || caches.match('/tianlongren/')))
     );
     return;
   }
