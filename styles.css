@@ -43,6 +43,10 @@
   --rose: #f43f5e; --rose-soft: #ffe7ec; --rose-ink: #be123c;
   --violet: #7c5cff; --violet-soft: #ece7ff; --violet-ink: #6d28d9;
   --teal: #14b8a6; --teal-soft: #d6f5f1; --teal-ink: #0d7c70;
+  /* 状态语义令牌：把散落在 JS 内联样式里的好坏色收进来，浅/暗主题各一套。
+     注意这里不是股票涨跌色（本项目财务是「收入绿 / 支出红」的记账语义）。 */
+  --good: #10b981; --bad: #f43f5e; --warn: #f59e0b; --muted-num: #64748b;
+  --hero-good: #34d399; --hero-bad: #fb7185;
 
   /* 图表主题色（Light） */
   --chart-grid: #eef0f4;
@@ -87,6 +91,8 @@
   --rose: #fb7185; --rose-soft: #3a1620; --rose-ink: #fda4af;
   --violet: #a78bfa; --violet-soft: #2a2050; --violet-ink: #c4b5fd;
   --teal: #2dd4bf; --teal-soft: #0f3733; --teal-ink: #5eead4;
+  --good: #34d399; --bad: #fb7185; --warn: #fbbf24; --muted-num: #8a909c;
+  --hero-good: #34d399; --hero-bad: #fb7185;
 
   --chart-grid: #23262f;
   --chart-text: #8a909c;
@@ -194,13 +200,18 @@ body {
 /* 顶栏必须是不透明实色：iOS Safari / PWA WebView 里「position:sticky + backdrop-filter」
    会把整个合成层连自身文字一起栅格化，滚动后设置按钮、问候语、日期会整行发虚；
    半透明底色还会把极光背景混进来，进一步压低文字对比度。
-   这里彻底不用 blur，文字永远待在清晰的独立层上（下面玻璃主题层也有同名覆盖，需同步）。 */
+   这里彻底不用 blur，文字永远待在清晰的独立层上。
+   v43：这是 .topbar 的唯一定义——原先玻璃主题层还有一份同名覆盖（内容完全相同），
+   末尾又单独挂了一条投影，三处重复容易改漏；现全部合并到这里。
+   注意：后面玻璃主题层的 .card/.hero-dark 等规则仍然生效，只是顶栏刻意不参与玻璃化。 */
 .topbar {
   position: sticky; top: 0; z-index: 60; background: var(--surface);
   -webkit-backdrop-filter: none; backdrop-filter: none;
   padding: calc(12px + env(safe-area-inset-top)) 26px 12px;
   display: flex; align-items: center; justify-content: space-between;
   border-bottom: 1px solid var(--border);
+  /* 改实色后和下方极光背景缺一点分界，补一层很淡的投影 */
+  box-shadow: 0 2px 12px rgba(16, 18, 29, .05);
 }
 .menu-btn { display: none; width: 38px; height: 38px; border-radius: 11px; border: none; background: var(--surface); font-size: 18px; cursor: pointer; color: var(--ink); }
 /* 顶栏左侧加了一个设置按钮后，中间的问候语可用宽度变窄；
@@ -274,9 +285,12 @@ body {
 .hero-dark .hd-label { font-size: var(--fs-sm); color: #8b93a7; }
 .hero-dark .hd-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .hero-dark .hd-grid-4 { grid-template-columns: repeat(4, 1fr); }
-.hero-dark .hd-item { background: rgba(255,255,255,.07); border-radius: var(--r-md); padding: 14px; }
-.hero-dark .hi-l { font-size: var(--fs-sm); color: #8b93a7; }
-.hero-dark .hi-v { font-size: var(--fs-lg); font-weight: 700; margin-top: 4px; font-family: var(--font-num); }
+/* hero 是信息最密的一块：四宫格收紧、表面压淡、标签提亮，降低整块的视觉噪音 */
+/* v43：玻璃主题层原本还有一条同名规则叠加模糊，两处值要人工同步、极易改漏；
+   那条是无条件全局规则，合并到这里后各主题表现完全一致。 */
+.hero-dark .hd-item { background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.08); border-radius: var(--r-md); padding: 11px 12px; backdrop-filter: blur(6px); }
+.hero-dark .hi-l { font-size: var(--fs-sm); color: #aab2c4; }
+.hero-dark .hi-v { font-size: var(--fs-lg); font-weight: 800; margin-top: 4px; font-family: var(--font-num); }
 .hero-dark .hd-trend { display:inline-block; font-size:var(--fs-sm); font-weight:700; padding:3px 10px; border-radius:999px; margin-bottom:14px; }
 .hero-dark .hd-trend.up { background:rgba(16,185,129,.18); color:#34d399; }
 .hero-dark .hd-trend.down { background:rgba(244,63,94,.18); color:#fb7185; }
@@ -488,7 +502,7 @@ body {
 /* ========== 支出 TOP5 横条（财务页） ========== */
 .top5-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
 .top5-row + .top5-row { border-top: 1px dashed var(--border); }
-.top5-rank { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; font-family: var(--font-num); font-size: 12px; font-weight: 800; color: #fff; background: #94a3b8; }
+.top5-rank { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; font-family: var(--font-num); font-size: 12px; font-weight: 800; color: var(--surface); background: var(--ink-3); }
 .top5-rank.r1 { background: linear-gradient(135deg, #f43f5e, #e11d48); }
 .top5-rank.r2 { background: linear-gradient(135deg, #fb7185, #f43f5e); }
 .top5-rank.r3 { background: linear-gradient(135deg, #fda4af, #fb7185); }
@@ -513,7 +527,7 @@ body {
 .wk-h-side b { font-family: var(--font-num); color: var(--ink-2); }
 .wk-bars { display: flex; align-items: flex-end; gap: 8px; height: 96px; margin-top: 14px; padding-top: 4px; }
 .wk-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; height: 100%; }
-.wk-bar { width: 100%; max-width: 34px; border-radius: 6px 6px 3px 3px; background: #e2e8f0; min-height: 4px; }
+.wk-bar { width: 100%; max-width: 34px; border-radius: 6px 6px 3px 3px; background: var(--chart-grid); min-height: 4px; }
 .wk-bar.has { background: linear-gradient(180deg, #34d399, #10b981); }
 .wk-bar-col.we .wk-bar.has { background: linear-gradient(180deg, #fcd34d, #f59e0b); }
 .wk-bar-col.today .wk-bar { box-shadow: 0 0 0 2px var(--accent); }
@@ -538,11 +552,19 @@ body {
 .ov-q.warn { border-color: rgba(244,63,94,.4); background: rgba(244,63,94,.06); }
 .ov-q-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 700; color: var(--ink-3); }
 .ov-q-h b { font-family: var(--font-num); font-size: 18px; font-weight: 800; color: var(--ink); }
-.ov-q-h b.tw { color: #e11d48; }
+.ov-q-h b.tw { color: var(--bad); }
 .ov-q-s { font-size: 12px; color: var(--ink-3); margin-top: 4px; }
-.ov-q-s.tw { color: #e11d48; font-weight: 700; }
-.mini-ring { width: 34px; height: 34px; flex: 0 0 auto; }
-.mini-ring .mini-ring-t { font-family: var(--font-num); font-size: 9px; font-weight: 800; fill: var(--ink-2); }
+.ov-q-s.tw { color: var(--bad); font-weight: 700; }
+.mini-ring { width: 36px; height: 36px; flex: 0 0 auto; }
+/* 原来 9px 的数字和旁边 18px 的「0/1」差一整档，今日一屏四格层级不齐 */
+.mini-ring .mini-ring-t { font-family: var(--font-num); font-size: 10px; font-weight: 800; fill: var(--ink-2); }
+/* 周报原来是 13px 纯文字、无底色，看不出是按钮 */
+#wkReportBtn {
+  min-height: 46px; font-size: 14px; font-weight: 800;
+  background: var(--accent-soft); color: var(--accent-ink);
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+}
+#wkReportBtn .wk-sub { font-size: 12px; font-weight: 600; opacity: .75; }
 
 /* ========== 餐食记录 ========== */
 /* 餐食记录 - 紧凑布局（一屏显示四餐） */
@@ -650,12 +672,18 @@ body {
 .form-2 { grid-template-columns: repeat(2, 1fr); }
 .form-3 { grid-template-columns: repeat(3, 1fr); }
 .fld { display: flex; flex-direction: column; gap: 6px; }
-.fld label { font-size: var(--fs-xs); color: var(--ink-3); font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+/* 中文标签不需要 uppercase；原来 11px + --ink-3 太淡，设置页看起来像说明文字 */
+.fld label { font-size: var(--fs-sm); color: var(--ink-2); font-weight: 700; letter-spacing: .2px; }
 .fld input, .fld select, .fld textarea {
-  padding: 11px 13px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--surface-2);
-  font-size: var(--fs-base); outline: none; color: var(--ink); font-family: inherit; transition: border-color .15s, background .15s;
+  padding: 11px 13px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--surface);
+  font-size: var(--fs-base); outline: none; color: var(--ink); font-family: inherit; transition: border-color .15s, background .15s, box-shadow .15s;
 }
 .fld input:focus, .fld select:focus, .fld textarea:focus { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 3px var(--accent-soft); }
+/* 只读的「目标预览」用浅底区分，避免和可编辑框混淆 */
+.fld input[readonly] { background: var(--surface-2); color: var(--ink-2); }
+@media (hover: hover) and (pointer: fine) {
+  .fld input:not([readonly]):hover, .fld select:hover { border-color: var(--accent); }
+}
 .fld.full { grid-column: 1 / -1; }
 textarea { width: 100%; min-height: 80px; resize: vertical; font-family: inherit; }
 
@@ -752,10 +780,15 @@ textarea { width: 100%; min-height: 80px; resize: vertical; font-family: inherit
    故做成无框紧凑 emoji（10px + 1px gap，三个也才 ~40px），多补剂也不会挤出格子 */
 .cell-badges .bdg { display: inline-flex; align-items: center; justify-content: center; font-size: 9px; line-height: 1; background: transparent; border: 0; border-radius: 6px; padding: 0; flex: none; }
 .cell-badges.many .bdg { font-size: 8px; }
-.cal-sum { margin-top: 12px; font-size: var(--fs-sm); color: var(--ink-3); font-weight: 600; }
-.cal-sum b { font-family: var(--font-num); color: var(--ink); }
-.cal-legend { display: flex; gap: 8px; margin-top: 10px; font-size: var(--fs-sm); color: var(--ink-3); flex-wrap: wrap; }
-.cal-legend .lg { display: inline-flex; align-items: center; gap: 5px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-full); padding: 3px 10px; font-weight: 600; }
+/* 本月小结原来是 12px 淡灰，几乎看不清；独立浅底条让它成为可读的汇总 */
+.cal-sum {
+  margin-top: 14px; padding: 10px 12px; border-radius: var(--r-sm);
+  background: var(--surface-2); border: 1px solid var(--border);
+  font-size: 13px; color: var(--ink-2); font-weight: 700; line-height: 1.5;
+}
+.cal-sum b { font-family: var(--font-num); color: var(--ink); font-weight: 800; }
+.cal-legend { display: flex; gap: 8px; margin-top: 10px; font-size: var(--fs-sm); color: var(--ink-2); flex-wrap: wrap; }
+.cal-legend .lg { display: inline-flex; align-items: center; gap: 5px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-full); padding: 4px 11px; font-weight: 700; }
 .cal-legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 
 /* ========== 弹窗 ========== */
@@ -953,8 +986,21 @@ body.fin-locked .chart-box::after { content:"🔒 财务已加密"; position:abs
 .act-w { width:74px; flex:0 0 auto; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); text-align:right; }
 .act-sets { font-size:12px; color:var(--text-2); min-width:32px; text-align:center; flex:0 0 auto; }
 .act-row .btn-sm { flex:0 0 auto; }
-.caret { display:inline-block; font-size:12px; color:var(--text-2); transition:transform .2s; margin-left:2px; }
-.caret.open { transform:rotate(90deg); }
+/* 折叠箭头原来只有 12px 的淡色 ▸，几乎看不见，用户不知道卡片能展开。
+   改成圆形浅色徽章，展开时整体旋转 90° 并反色，状态一眼可辨。 */
+.caret {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:20px; height:20px; margin-left:4px; border-radius:50%;
+  background:var(--accent-soft); color:var(--accent-ink);
+  font-size:13px; font-weight:800; line-height:1; vertical-align:middle;
+  transition:transform .2s, background .2s, color .2s;
+}
+.caret.open { transform:rotate(90deg); background:var(--accent); color:#fff; }
+/* 训练部位卡：8 张连排时压缩节奏，右侧计数加深，减少重复白卡的压迫感 */
+.train-part { margin-top: 10px; }
+.train-part .card-head { margin-bottom: 0; padding: 2px 0; min-height: 44px; }
+.train-part .card-head .card-sub { font-size: 13px; color: var(--ink-2); font-weight: 700; }
+.train-part [data-body] { padding-top: 12px; }
 
 /* ========== 内部滚动列表（记账/乱花/体重记录） ========== */
 .scroll-list { max-height: 260px; overflow-y: auto; margin-top: 10px; -webkit-overflow-scrolling: touch; }
@@ -1108,7 +1154,7 @@ body::before {
   border: 1px solid rgba(255, 255, 255, .14);
   box-shadow: var(--glass-shadow);
 }
-.hero-dark .hd-item { background: rgba(255, 255, 255, .10); border: 1px solid rgba(255, 255, 255, .12); backdrop-filter: blur(6px); }
+/* .hd-item 的降噪已合并进基础层唯一定义，这里不再重复覆盖。 */
 
 /* ---- 侧边栏：深色玻璃 ---- */
 .sidebar {
@@ -1121,14 +1167,8 @@ body::before {
 .nav-item:hover { background: rgba(255, 255, 255, .09); }
 .nav-item.active { background: rgba(255, 255, 255, .14); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
 
-/* ---- 顶栏：实色清晰层 ----
- * 这里刻意不套用玻璃主题。sticky + backdrop-filter 在 iOS 上会连顶栏文字一起糊掉，
- * 且半透明会把极光背景混进文字底下。实色 + 细分隔线，清晰度优先。 */
-.topbar {
-  background: var(--surface);
-  -webkit-backdrop-filter: none; backdrop-filter: none;
-  border-bottom: 1px solid var(--border);
-}
+/* 顶栏刻意不套用玻璃主题：定义已在基础层统一，这里不再重复覆盖。
+ * 原因见基础层注释（sticky + backdrop-filter 在 iOS 上会连顶栏文字一起糊掉）。 */
 
 /* ---- 弹窗 / Toast / 遮罩 ---- */
 .modal {
@@ -1154,7 +1194,8 @@ body::before {
 .meal-group { background: var(--glass-2); border: 1px solid var(--glass-border); }
 .meal-item { background: var(--glass-strong); border: 1px solid var(--glass-border); }
 .drink, .flow-btn, .punch-time, .act-name, .act-w, .todo-check, .fin-lockbar, .pseg, .trend-sub, .trend-tabs, .cal-nav, .modal-close, .prow-late { background: var(--glass-2); border-color: var(--glass-border); }
-.cal-cell { background: var(--glass-2); border-color: var(--glass-border); }
+/* 格子用极淡实边勾出网格，原来半透明白边在白卡上等于没有 */
+.cal-cell { background: var(--surface-2); border-color: var(--line); }
 .cal-cell.trained { background: color-mix(in srgb, var(--green-soft) 72%, transparent); }
 .cal-cell.rest { background: color-mix(in srgb, var(--blue-soft) 72%, transparent); }
 .pseg.active { background: color-mix(in srgb, var(--accent-soft) 78%, transparent); }
@@ -1171,13 +1212,15 @@ body::before {
 /* 顶栏按钮也用实色：半透明玻璃叠在顶栏上会让 ⚙️ / 主题图标发灰 */
 .theme-btn, .pill, .menu-btn { background: var(--surface-2); border: 1px solid var(--border); }
 
-/* ---- 表单：玻璃输入框 ---- */
+/* ---- 表单：输入框保留可见边框 ----
+ * 这里曾用 --glass-border（半透明白）叠在白卡片上，结果输入框看起来像纯文本、
+ * 用户不知道能点能改。实底 + 实边框才像可编辑控件，主题切换也靠令牌自动跟随。 */
 .fld input, .fld select, .fld textarea {
-  background: var(--glass-2);
-  border: 1px solid var(--glass-border);
+  background: var(--surface);
+  border: 1px solid var(--border);
   color: var(--ink);
 }
-.fld input:focus, .fld select:focus, .fld textarea:focus { background: var(--glass-strong); }
+.fld input:focus, .fld select:focus, .fld textarea:focus { background: var(--surface); }
 .btn { background: var(--glass-2); border: 1px solid var(--glass-border); color: var(--ink); }
 .btn:hover { background: var(--glass); }
 .btn-primary { background: color-mix(in srgb, var(--brand) 88%, transparent); color: #fff; border-color: transparent; }
@@ -1329,4 +1372,19 @@ body::before {
 }
 .pwa-install-btn:hover {
   background: var(--accent-strong);
+}
+
+/* ============================================================
+ * 触摸热区与手机节奏（统一放在最后，避免与前面各处同名规则互相打架）
+ * 原则：孤立控件尽量接近 44px；列表内的密集圆钮放大到 30px（再大会撑破记录行）。
+ * ============================================================ */
+@media (max-width: 768px) {
+  .mi-del, .mi-edit { width: 30px; height: 30px; font-size: 13px; }
+  .modal-close, .cal-nav, .fin-lockbtn { width: 40px; height: 40px; }
+  .theme-btn, .menu-btn { width: 40px; height: 40px; }
+  .btn-sm { min-height: 38px; padding: 8px 14px; }
+  /* 长页面少滚一点：卡片内距与卡片间距收紧，内容区反而更宽 */
+  .card { padding: 18px 16px; }
+  .mt-3 { margin-top: 16px; }
+  .card-head { margin-bottom: 14px; }
 }
