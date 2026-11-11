@@ -12,9 +12,14 @@
   let SYNC_URL = "";
   try { SYNC_URL = localStorage.getItem("tlr_sync_url") || ""; } catch (e) {}
   const SEED_VERSION = 3;
+  /* 唯一显示版本号：侧栏、设置页「关于」都从这里取，改版本只改这一行。
+     sw.js 的缓存名同步写成 tlr- 前缀 + 同一数字。 */
+  const APP_VERSION = "v43";
   const deepClone = (o) => (o == null ? null : JSON.parse(JSON.stringify(o)));
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-  const esc = (s) => { const d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; };
+  /* 与「textContent → innerHTML」等价，但不再为每次调用创建一个 DOM 节点。
+     交易列表/餐食列表里逐字段调用，省掉成百上千次 DOM 创建。 */
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const fmt = (n) => (Number(n) || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmt2 = (n) => (Number(n) || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fm = (v) => { const a = Math.abs(v); return a >= 10000 ? (v / 10000).toFixed(2) + "万" : fmt2(v); };
@@ -169,7 +174,7 @@
     const el = $("#frivList"); if (!el) return;
     const items = frivItems().slice().sort((a, b) => b.date.localeCompare(a.date) || String(b.id).localeCompare(String(a.id)));
     el.innerHTML = items.length
-      ? items.map((t) => `<div class="row"><div class="row-main"><div class="row-title">${esc(t.note)}</div><div class="row-meta">${t.date.slice(5)}</div></div><span class="num" style="color:#be123c;font-weight:800;">-${MM2(t.amt)}</span><button class="mi-del" data-delfriv="${t.id}">×</button></div>`).join("")
+      ? items.map((t) => `<div class="row"><div class="row-main"><div class="row-title">${esc(t.note)}</div><div class="row-meta">${t.date.slice(5)}</div></div><span class="num" style="color:#be123c;font-weight:800;">-${MM2(t.amt)}</span><button class="mi-del" aria-label="删除" data-delfriv="${t.id}">×</button></div>`).join("")
       : emptyState('🎉', '本月还没乱花', '控制得很好！有非必要支出时可以记在这里', null, null);
     $$("#frivList [data-delfriv]").forEach((b) => (b.onclick = () => { frivItems().splice(frivItems().indexOf(frivItems().find((x) => x.id === b.dataset.delfriv)), 1); save(); renderFrivList(); renderFinance(); toast("已删除"); }));
   }
@@ -773,7 +778,7 @@
   function fundRow(listSel, entries, fmtFn, onDel) {
     const el = $(listSel); if (!el) return;
     el.innerHTML = entries.length
-      ? entries.map(([m, v]) => `<div class="row"><div class="row-main"><div class="row-title">${m.replace("-", "年")}月</div></div><span class="num" style="font-weight:800;">${fmtFn(v)}</span><button class="mi-del" data-m="${m}">×</button></div>`).join("")
+      ? entries.map(([m, v]) => `<div class="row"><div class="row-main"><div class="row-title">${m.replace("-", "年")}月</div></div><span class="num" style="font-weight:800;">${fmtFn(v)}</span><button class="mi-del" aria-label="删除" data-m="${m}">×</button></div>`).join("")
       : emptyState('📭', '暂无记录', '开始记录你的第一笔数据吧', null, null);
     $$(listSel + " [data-m]").forEach((b) => (b.onclick = () => onDel(b.dataset.m)));
   }
@@ -1285,7 +1290,7 @@
             <div class="ov-q-s">${inT.calories > tg.calories ? "已超 " + (inT.calories - tg.calories) + " kcal" : "剩 " + Math.max(0, tg.calories - inT.calories) + " kcal"}</div>
           </div>
         </div>
-        <button class="btn btn-ghost w-full mt-2" id="wkReportBtn" style="font-size:13px;">📊 生成本周健康快报 · 长图可分享</button>
+        <button class="btn btn-ghost w-full mt-2" id="wkReportBtn">📊 生成本周健康快报 <span class="wk-sub">· 长图可分享</span></button>
       </div>
 
       <!-- 今日待办 -->
@@ -1358,7 +1363,7 @@
     $("#ovTodo").innerHTML = todos.length ? todos.map((x) => `<div class="todo-row ${x.done ? "done" : ""}">
       <button class="todo-check" data-todook="${x.id}">${x.done ? "✓" : ""}</button>
       <div class="todo-text">${esc(x.text)}</div>
-      <button class="mi-del" data-tododel="${x.id}" title="删除">×</button>
+      <button class="mi-del" aria-label="删除" data-tododel="${x.id}" title="删除">×</button>
     </div>`).join("") : `<div class="card-sub">还没有待办，下面加一条吧</div>`;
     // 事件委托：待办勾选/删除
     $("#ovTodo").onclick = (e) => {
@@ -1602,8 +1607,8 @@
             <div class="mi-macros"><span style="color:#64748b">🔥</span> ${num(it, "calories")} kcal · <span style="color:#64748b">🍚</span> ${num(it, "carbs")}g · <span style="color:#64748b">🥩</span> ${num(it, "protein")}g · <span style="color:#64748b">🧈</span> ${num(it, "fat")}g · <span style="color:#64748b">🥚</span> ${num(it, "cholesterol")}mg · <span style="color:#64748b">🦐</span> ${num(it, "purine")}mg</div>
           </div>
           <div class="mi-cal">${num(it, "calories")}</div>
-          <button class="mi-del" data-editmeal="${m.k}:${it.id}" title="编辑">编</button>
-          <button class="mi-del" data-delmeal="${m.k}:${it.id}" title="删除" style="margin-left:4px;">×</button>
+          <button class="mi-del" aria-label="编辑" data-editmeal="${m.k}:${it.id}" title="编辑">编</button>
+          <button class="mi-del" aria-label="删除" data-delmeal="${m.k}:${it.id}" title="删除" style="margin-left:4px;">×</button>
         </div>`).join("");
       return `
         <div class="meal-group">
@@ -2348,6 +2353,8 @@
 
   if (typeof window !== "undefined") window.__parseNutritionText = parseNutritionText;
   if (typeof window !== "undefined") window.__TLR = { get D() { return D; }, normalize, unwrapSave, weeklyReport, weekWorkStats, exportWeeklyReport, monthSummary, autoPostMonthly };
+  /* 侧栏版本号由 JS 注入，避免 HTML 里再写一份和 APP_VERSION 打架 */
+  if (typeof window !== "undefined") { const av = $("#appVer"); if (av) av.textContent = APP_VERSION; }
 
   // 一键记一餐：弹窗选餐次 → 进入添加餐食弹窗（addMealModal 记入 curMealDate，可补登历史日期）
   function quickMealModal() {
@@ -2821,7 +2828,7 @@
               水份 ${wm != null ? wm : "--"}kg ${upDown(wm, pw)}
             </div>
           </div>
-          <button class="mi-del" data-delweight="${r.date}" title="删除" style="margin-left:10px;">×</button>
+          <button class="mi-del" aria-label="删除" data-delweight="${r.date}" title="删除" style="margin-left:10px;">×</button>
         </div>`;
       }
       box.innerHTML = html;
@@ -2875,7 +2882,7 @@
     const fmtInt = (n) => Math.round(Number(n) || 0).toLocaleString("zh-CN");
     const mlOf = (d) => (d.water != null ? d.water : ((D.nutrition.drinks || []).find((x) => x.name === d.name) || {}).water) || 0;
     const drinkLog = (w.drinks && w.drinks.length)
-      ? `<div class="drink-tl">${w.drinks.map((d, i) => `<div class="dt-item"><span class="dt-time">${d.time || ""}</span><span class="dt-dot"></span><span class="dt-body">${drinkIcon(d.name)} ${esc(d.name)}<span class="dt-ml">+${fmtInt(mlOf(d))}ml</span></span><button class="mi-del" data-deldrink="${i}" title="删除" style="margin-left:8px;">×</button></div>`).join("")}</div>`
+      ? `<div class="drink-tl">${w.drinks.map((d, i) => `<div class="dt-item"><span class="dt-time">${d.time || ""}</span><span class="dt-dot"></span><span class="dt-body">${drinkIcon(d.name)} ${esc(d.name)}<span class="dt-ml">+${fmtInt(mlOf(d))}ml</span></span><button class="mi-del" aria-label="删除" data-deldrink="${i}" title="删除" style="margin-left:8px;">×</button></div>`).join("")}</div>`
       : `<div class="card-sub">今天还没记录饮品</div>`;
     const goalOK = w.water >= 2000;
     const goalHtml = goalOK
@@ -2966,9 +2973,9 @@
         <button class="btn btn-sm" data-act="reset">R</button>
         <button class="btn btn-sm" data-act="del" style="color:var(--rose-ink);border-color:var(--rose-soft);background:var(--rose-soft);">×</button>
       </div>`).join("");
-      return `<div class="card mt-3">
+      return `<div class="card mt-2 train-part">
         <div class="card-head" data-toggle="${p}" style="cursor:pointer;">
-          <div class="card-title">${partIcon(p)} ${p} <span class="caret ${trainCollapsed[p] ? "" : "open"}">▸</span></div>
+          <div class="card-title">${partIcon(p)} ${p} <span class="caret ${trainCollapsed[p] ? "" : "open"}" aria-hidden="true">▸</span></div>
           <span class="card-sub">${acts.length} 动作 / ${total} 组</span>
         </div>
         <div data-body="${p}" style="${trainCollapsed[p] ? "display:none;" : ""}">${body}
@@ -3169,7 +3176,7 @@
         // 入账走绿（钱进来），还款走红（临近冒 rose）；图标与 meta 标签同步区分
         const icBg = urgent ? (isIn ? "#d1fae5" : "#ffe4e6") : (isIn ? "#ecfdf5" : "#f1f5f9");
         const icFg = urgent ? (isIn ? "#047857" : "#be1239") : (isIn ? "#059669" : "#64748b");
-        return `<div class="row"><div class="row-ic" style="background:${icBg};color:${icFg};">${isIn ? "🏦" : "💳"}</div><div class="row-main"><div class="row-title">${esc(b.name)}</div><div class="row-meta">${isIn ? "入账" : "还款"} · 每月 ${b.day} 日 · 下次 ${d.getMonth() + 1}月${d.getDate()}日</div></div><span class="num" style="color:${isIn ? "#059669" : urgent ? "#be1239" : "var(--ink-3)"};font-weight:800;">${left === 0 ? "今天" : left + " 天"}</span><button class="mi-del" data-delbill="${b.id}" title="删除">×</button></div>`;
+        return `<div class="row"><div class="row-ic" style="background:${icBg};color:${icFg};">${isIn ? "🏦" : "💳"}</div><div class="row-main"><div class="row-title">${esc(b.name)}</div><div class="row-meta">${isIn ? "入账" : "还款"} · 每月 ${b.day} 日 · 下次 ${d.getMonth() + 1}月${d.getDate()}日</div></div><span class="num" style="color:${isIn ? "#059669" : urgent ? "#be1239" : "var(--ink-3)"};font-weight:800;">${left === 0 ? "今天" : left + " 天"}</span><button class="mi-del" aria-label="删除" data-delbill="${b.id}" title="删除">×</button></div>`;
       }).join("")
       : `<div class="card-sub">还没设月度事项 · 填上面的名称和日期添加</div>`;
     $$("#billList [data-delbill]").forEach((btn) => (btn.onclick = () => {
@@ -3251,13 +3258,13 @@
         })()}
         <div class="hd-grid hd-grid-4">
           <div class="hd-item"><div class="hi-l">总资产</div><div class="hi-v">${MM(assetTotal())}</div></div>
-          <div class="hd-item"><div class="hi-l">总负债</div><div class="hi-v" style="color:#fb7185">${MM(dTot())}</div></div>
-          <div class="hd-item"><div class="hi-l">本月收入</div><div class="hi-v" style="color:#34d399">${MM(ms.inc)}</div></div>
-          <div class="hd-item"><div class="hi-l">本月支出</div><div class="hi-v" style="color:#fb7185">${MM(ms.exp)}</div></div>
+          <div class="hd-item"><div class="hi-l">总负债</div><div class="hi-v" style="color:var(--hero-bad)">${MM(dTot())}</div></div>
+          <div class="hd-item"><div class="hi-l">本月收入</div><div class="hi-v" style="color:var(--hero-good)">${MM(ms.inc)}</div></div>
+          <div class="hd-item"><div class="hi-l">本月支出</div><div class="hi-v" style="color:var(--hero-bad)">${MM(ms.exp)}</div></div>
         </div>
 
         <!-- 净资产：不再是第一眼，沉到页脚小字 -->
-        <div class="hd-foot"><span>净资产（总资产 − 总负债）</span><b class="num" style="color:${nw >= 0 ? "#34d399" : "#fb7185"};">${MM(nw)}</b></div>
+        <div class="hd-foot"><span>净资产（总资产 − 总负债）</span><b class="num" style="color:${nw >= 0 ? "var(--hero-good)" : "var(--hero-bad)"};">${MM(nw)}</b></div>
 
         <details class="asset-edit">
           <summary>理财与负债（点击展开）</summary>
@@ -3501,7 +3508,7 @@
       const amtHtml = isT
         ? `<span class="num" style="color:#1d4ed8;font-weight:800;">⇄ ${MM2(t.amt)}</span>`
         : `<span class="num" style="color:${t.type === "income" ? "#047857" : "#be123c"};font-weight:800;">${t.type === "income" ? "+" : "-"}${MM2(t.amt)}</span>`;
-      return `<div class="row"><div class="row-ic" style="background:${ic[0]};color:${ic[1]};">${ic[2]}</div><div class="row-main"><div class="row-title">${title}</div><div class="row-meta">${t.date.slice(5)} · ${isT ? esc(t.note || "账户间流转") : esc(t.acct || "其他")}</div></div>${amtHtml}<div class="row-acts"><button class="mi-edit" data-edittx="${t.id}" title="编辑这条记录">✎</button><button class="mi-del" data-deltx="${t.id}" title="删除这条记录">×</button></div></div>`;
+      return `<div class="row"><div class="row-ic" style="background:${ic[0]};color:${ic[1]};">${ic[2]}</div><div class="row-main"><div class="row-title">${title}</div><div class="row-meta">${t.date.slice(5)} · ${isT ? esc(t.note || "账户间流转") : esc(t.acct || "其他")}</div></div>${amtHtml}<div class="row-acts"><button class="mi-edit" data-edittx="${t.id}" title="编辑这条记录">✎</button><button class="mi-del" aria-label="删除" data-deltx="${t.id}" title="删除这条记录">×</button></div></div>`;
     }).join("") : `<div class="empty">本月暂无记录</div>`;
     $$("#txList [data-deltx]").forEach((b) => b.onclick = () => {
       const id = b.dataset.deltx;
@@ -3823,8 +3830,8 @@
           <div class="acct-meta">
             <span class="card-sub">占比 ${pct.toFixed(1)}%</span>
             <span class="acct-actions">
-              <button class="mi-del" data-editbal="${esc(n)}" title="编辑">✎</button>
-              <button class="mi-del" data-delbal="${esc(n)}" title="删除">×</button>
+              <button class="mi-del" aria-label="编辑" data-editbal="${esc(n)}" title="编辑">✎</button>
+              <button class="mi-del" aria-label="删除" data-delbal="${esc(n)}" title="删除">×</button>
             </span>
           </div>
         </div>`;
@@ -3836,19 +3843,19 @@
     });
     /* 兼容：如果 balList 还存在，用旧逻辑 */
     if ($("#balList")) {
-      $("#balList").innerHTML = entries.map(([n, v]) => `<div class="row" style="padding:8px 0;"><div class="row-main"><div class="row-title">${esc(n)}</div></div><input class="fld" style="width:100px;text-align:right;padding:6px 8px;" type="number" data-bal="${esc(n)}" value="${v}"><button class="mi-del" data-delbal="${esc(n)}">×</button></div>`).join("");
+      $("#balList").innerHTML = entries.map(([n, v]) => `<div class="row" style="padding:8px 0;"><div class="row-main"><div class="row-title">${esc(n)}</div></div><input class="fld" style="width:100px;text-align:right;padding:6px 8px;" type="number" data-bal="${esc(n)}" value="${v}"><button class="mi-del" aria-label="删除" data-delbal="${esc(n)}">×</button></div>`).join("");
       $$("#balList [data-bal]").forEach((i) => i.onchange = () => { D.finance.bals[i.dataset.bal] = +i.value || 0; save(); renderAssets(); refreshFinCharts(); renderOverview(); });
       $$("#balList [data-delbal]").forEach((b) => b.onclick = () => { const n = b.dataset.delbal; const ks = Object.keys(D.finance.bals); if (ks.length <= 1) { toast("至少保留一个", "warn"); return; } if (confirm("删除账户「" + n + "」？")) { delete D.finance.bals[n]; save(); renderAssets(); refreshFinCharts(); renderOverview(); } });
     }
 
     if ($("#invList")) {
-      $("#invList").innerHTML = D.finance.invs.length ? D.finance.invs.map((iv, i) => `<div class="inv-row"><input class="ae-in" data-inv="${i}" data-f="name" value="${esc(iv.name)}"><input class="ae-num" type="number" data-inv="${i}" data-f="cv" value="${iv.cv}"><span class="num ${iv.cv - iv.cap >= 0 ? "text-green" : "text-rose"}" style="text-align:right;color:${iv.cv - iv.cap >= 0 ? "#047857" : "#be123c"}">${iv.cv - iv.cap >= 0 ? "+" : ""}${MM2(iv.cv - iv.cap)}</span><button class="mi-del" data-delinv="${i}">×</button></div>`).join("") : `<div class="card-sub">暂无理财</div>`;
+      $("#invList").innerHTML = D.finance.invs.length ? D.finance.invs.map((iv, i) => `<div class="inv-row"><input class="ae-in" data-inv="${i}" data-f="name" value="${esc(iv.name)}"><input class="ae-num" type="number" data-inv="${i}" data-f="cv" value="${iv.cv}"><span class="num ${iv.cv - iv.cap >= 0 ? "text-green" : "text-rose"}" style="text-align:right;color:${iv.cv - iv.cap >= 0 ? "#047857" : "#be123c"}">${iv.cv - iv.cap >= 0 ? "+" : ""}${MM2(iv.cv - iv.cap)}</span><button class="mi-del" aria-label="删除" data-delinv="${i}">×</button></div>`).join("") : `<div class="card-sub">暂无理财</div>`;
       $$("#invList [data-inv]").forEach((i) => i.onchange = () => { const iv = D.finance.invs[+i.dataset.inv]; iv[i.dataset.f] = i.dataset.f === "name" ? i.value : (+i.value || 0); save(); renderAssets(); refreshFinCharts(); renderOverview(); });
       $$("#invList [data-delinv]").forEach((b) => b.onclick = () => { D.finance.invs.splice(+b.dataset.delinv, 1); save(); renderAssets(); refreshFinCharts(); renderOverview(); });
     }
 
     if ($("#debtList")) {
-      $("#debtList").innerHTML = D.finance.debts.length ? D.finance.debts.map((d, i) => `<div class="row" style="padding:8px 0;"><div class="row-main"><div class="row-title">${esc(d.name)}</div></div><input class="ae-num" style="width:110px;flex:none;text-align:right;padding:8px 9px;" type="number" data-debt="${i}" value="${d.amt}"><button class="mi-del" data-deldebt="${i}" style="flex:none;">×</button></div>`).join("") : `<div class="card-sub">暂无负债</div>`;
+      $("#debtList").innerHTML = D.finance.debts.length ? D.finance.debts.map((d, i) => `<div class="row" style="padding:8px 0;"><div class="row-main"><div class="row-title">${esc(d.name)}</div></div><input class="ae-num" style="width:110px;flex:none;text-align:right;padding:8px 9px;" type="number" data-debt="${i}" value="${d.amt}"><button class="mi-del" aria-label="删除" data-deldebt="${i}" style="flex:none;">×</button></div>`).join("") : `<div class="card-sub">暂无负债</div>`;
       $$("#debtList [data-debt]").forEach((i) => i.onchange = () => { D.finance.debts[+i.dataset.debt].amt = +i.value || 0; save(); renderAssets(); refreshFinCharts(); renderOverview(); });
       $$("#debtList [data-deldebt]").forEach((b) => b.onclick = () => { D.finance.debts.splice(+b.dataset.deldebt, 1); save(); renderAssets(); refreshFinCharts(); renderOverview(); });
     }
@@ -4057,7 +4064,7 @@
 
       <div class="card mt-3">
         <div class="card-head"><div class="card-title">关于</div></div>
-        <p class="card-sub">天龙人 · 个人工作台 v4.1<br>整合 营养师 / 天龙人 / 小金库 三个小样，现代卡片风格。本地优先：数据只存在你当前浏览器，分享链接不会带出你的任何记录。</p>
+        <p class="card-sub">天龙人 · 个人工作台 ${APP_VERSION}<br>整合 营养师 / 天龙人 / 小金库 三个小样，现代卡片风格。本地优先：数据只存在你当前浏览器，分享链接不会带出你的任何记录。</p>
       </div>`;
 
     const prev = () => {
