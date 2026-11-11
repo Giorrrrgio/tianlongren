@@ -2,7 +2,13 @@
  * 缓存策略：代码（HTML/JS/CSS）Network First，带 cache:'no-store' 绕开 Pages 的
  *           10 分钟 HTTP 缓存，离线时回退 Cache Storage；其它资源 Cache First + 后台静默更新。
  *           （旧注释写「Cache First」与实现不符，v43 更正。）
- * 版本：tlr-v43
+ * 版本：tlr-v44
+ * v44：学习并落地 Impeccable(arrange/polish) + UI-UX Pro Max + UI Design System 的高阶准则。
+ *      总览去掉「卡片里再装一排卡片」：今日动线/今日一屏改无框区块，靠标题与间距建立节奏；
+ *      补齐高频磁贴（一键直达/喝水/快速喝水）的按压反馈、按钮 disabled 明确态；
+ *      新增 --ease-out/--dur-fast 动效令牌，两处 transition:all 改成只过渡 transform 与颜色；
+ *      prefers-reduced-motion 从点名 4 个类升级成全局兜底；手机端辅助小字只加深颜色不放大字号
+ *      （避免重演「界面变大」），主操作按钮热区补到 44px。
  * v43：UI 打磨 + 设计令牌统一 + 低风险工程债。
  *      设置页输入框恢复可见边框（玻璃层半透明白边让它看起来像纯文本）、训练页折叠箭头改圆形徽章并压缩卡片、
  *      日历小结独立浅底条、财务深色 hero 降噪、总览周报按钮做出按钮感、手机端卡片节奏收紧；
@@ -81,7 +87,7 @@
  *      「网络优先」失效，导致部署后用户仍拿到旧代码）；注册时加 updateViaCache:'none'。
  */
 
-const CACHE_NAME = 'tlr-v43';
+const CACHE_NAME = 'tlr-v44';
 
 // 核心资源：小、必需。用 addAll 一次性预缓存。
 // v7 变更：体重识别已从「截图 OCR」改为「粘贴文本解析」，16MB 的 PP-OCRv4 模型
