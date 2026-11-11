@@ -14,7 +14,7 @@
   const SEED_VERSION = 3;
   /* 唯一显示版本号：侧栏、设置页「关于」都从这里取，改版本只改这一行。
      sw.js 的缓存名同步写成 tlr- 前缀 + 同一数字。 */
-  const APP_VERSION = "v43";
+  const APP_VERSION = "v44";
   const deepClone = (o) => (o == null ? null : JSON.parse(JSON.stringify(o)));
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
   /* 与「textContent → innerHTML」等价，但不再为每次调用创建一个 DOM 节点。
@@ -1256,9 +1256,9 @@
         </div>
       </div>
 
-      <!-- 一键直达：置顶 -->
-      <div class="card">
-        <div class="card-head"><div class="card-title">今日动线 · 一键直达</div><span class="card-sub">今日已登记 ${fdN}/6</span></div>
+      <!-- 一键直达：置顶。v44 起用无框区块包磁贴，避免「卡片里再装一排卡片」 -->
+      <div class="ov-block">
+        <div class="card-head"><div class="card-title">今日动线 · 一键直达</div><span class="card-sub" id="ovFlowCount">今日已登记 ${fdN}/6</span></div>
         <div class="flow-bar">
           <button class="flow-btn ${fd.weight ? "done" : ""}" data-q="weight"><span class="q-ic">🐖</span><span class="q-lb">体重</span>${fd.weight ? '<span class="q-ok">✓</span>' : ""}</button>
           <button class="flow-btn ${fd.calendar ? "done" : ""}" data-q="calendar"><span class="q-ic">📅</span><span class="q-lb">日历</span>${fd.calendar ? '<span class="q-ok">✓</span>' : ""}</button>
@@ -1270,7 +1270,7 @@
       </div>
 
       <!-- 今日一屏：待办 / 打卡 / 饮水小环 / 热量小环，一眼看全今天 -->
-      <div class="card mt-3">
+      <div class="ov-block mt-3">
         <div class="card-head"><div class="card-title">⚡ 今日一屏</div><span class="card-sub">待办 · 打卡 · 饮水 · 热量</span></div>
         <div class="ov-quad">
           <div class="ov-q">
