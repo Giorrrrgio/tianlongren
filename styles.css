@@ -17,6 +17,10 @@
   --sh-sm: 0 1px 2px rgba(16, 18, 29, .06);
   --sh: 0 10px 30px rgba(16, 18, 29, .08);
   --sh-lg: 0 24px 60px rgba(16, 18, 29, .16);
+  /* 动效令牌（v44）：统一用 ease-out 减速曲线，禁止回弹/弹性；只动画 transform 与颜色 */
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --dur-fast: 150ms;
+  --dur-mid: 250ms;
 
   /* 画布 / 表面 */
   --bg: #f5f6f8;
@@ -690,10 +694,16 @@ textarea { width: 100%; min-height: 80px; resize: vertical; font-family: inherit
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   padding: 11px 18px; border-radius: var(--r-sm); border: none; font-size: var(--fs-base); font-weight: 700;
-  cursor: pointer; transition: all .15s; background: var(--surface-2); color: var(--ink); border: 1px solid var(--border);
+  cursor: pointer;
+  /* v44：不再用 transition: all（会连布局属性一起动画，造成掉帧），只过渡 transform 与颜色 */
+  transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+  background: var(--surface-2); color: var(--ink); border: 1px solid var(--border);
 }
 .btn:hover { background: var(--line); }
 .btn:active { transform: scale(0.97); }
+.btn:disabled, .flow-btn:disabled, .drink:disabled {
+  opacity: .48; cursor: not-allowed; transform: none; box-shadow: none;
+}
 /* 统一焦点环：全局的 outline 会硬切毛玻璃边缘，按钮/导航项改用柔和外发光 */
 .btn:focus-visible, .tab-item:focus-visible, .nav-item:focus-visible, .trend-tab:focus-visible, .drink:focus-visible, .flow-btn:focus-visible {
   outline: none;
@@ -1280,6 +1290,16 @@ body::before {
   .pulse-value { animation: none; }
   .card:hover { transform: none; }
   .ripple { display: none; }
+  /* v44：全局兜底。原来只点名 4 个类，新组件加的动画会漏；压时长而不是删动画名，
+     这样依赖 animationend / transitionend 的逻辑仍然能正常收尾。 */
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* 切页动画带 translateX，压成 0 时长后仍可能停在插值帧，直接关掉 */
+  .page.active, .page.exit { animation: none !important; transform: none !important; }
 }
 
 /* ========== 空状态增强 (Empty State) ========== */
@@ -1367,7 +1387,7 @@ body::before {
   font-size: var(--fs-sm);
   cursor: pointer;
   border: none;
-  transition: all .15s;
+  transition: background var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
   flex-shrink: 0;
 }
 .pwa-install-btn:hover {
@@ -1387,4 +1407,39 @@ body::before {
   .card { padding: 18px 16px; }
   .mt-3 { margin-top: 16px; }
   .card-head { margin-bottom: 14px; }
+}
+
+/* ============================================================
+ * v44：落地 Impeccable(arrange/polish) + UI-UX Pro Max + UI Design System 的高阶准则
+ *  1) arrange.md「NEVER nest cards inside cards」：总览两个高频区块原本是
+ *     「白卡里再装一排磁贴/小卡」，四张同款白卡连排、毫无节奏。改成无框区块，
+ *     靠标题 + 间距分组，让内层磁贴自己承担「可点」的视觉职责。
+ *  2) polish.md「每个交互元素都要有 Active 状态」：补齐高频磁贴的按压反馈。
+ *  3) polish.md 对比度：手机端辅助小字只加深颜色、不动字号（字号一变布局就变，
+ *     用户对「界面被放大」很敏感），把小字对比度从约 4.8:1 抬到约 5.8:1。
+ * 新规则统一放末尾，优先级靠后但要避开已完成/选中/警示等语义态。
+ * ============================================================ */
+.ov-block { margin-top: var(--sp-5); }
+.ov-block .card-head { margin-bottom: var(--sp-3); }
+/* 脱离外层白卡后，磁贴必须用实底，否则会和极光背景糊在一起；
+   :not 排除完成态 / 选中态 / 漏打警示态，保留它们各自的语义底色。 */
+.ov-block .flow-bar > .flow-btn:not(.done):not(.qt-sel) { background: var(--surface); border-color: var(--border); }
+.ov-block .ov-q:not(.warn) { background: var(--surface); }
+
+/* 高频磁贴统一按压反馈 + 同一条减速曲线（不动画布局属性，不掉帧） */
+.flow-btn,
+.drink-list > .drink,
+.qw-grid > .flow-btn {
+  transition: transform var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+.flow-btn:active,
+.drink-list > .drink:active,
+.qw-grid > .flow-btn:active { transform: scale(.96); }
+
+@media (max-width: 768px) {
+  :root, [data-theme="light"] { --ink-3: #5b6472; }
+  [data-theme="dark"] { --ink-3: #9ba2ae; }
+  /* 主操作按钮对齐 Apple HIG 44px 热区；.btn-sm 是列表内密集按钮，
+     用 :not 排除，保持 38px 不撑破记录行。 */
+  .btn:not(.btn-sm) { min-height: 44px; }
 }
